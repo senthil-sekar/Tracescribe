@@ -79,7 +79,7 @@ public sealed class TracescribeLogProcessor : BaseProcessor<LogRecord>
             foreach (var kv in original)
             {
                 hasIntent |= kv.Key == TracescribeAttributes.Intent;
-                if (redactor is null || kv.Key == OriginalFormat || kv.Value is null or bool or IFormattable and not string)
+                if (redactor is null || kv.Key == OriginalFormat || kv.Value is null or bool or IFormattable)
                 {
                     // Numbers, dates and booleans can't carry PII patterns worth masking.
                     attributes.Add(kv);

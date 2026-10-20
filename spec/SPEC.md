@@ -1,7 +1,8 @@
-# Tracescribe Semantic Conventions v0.1.0
+# Tracescribe Semantic Conventions v0.2.0
 
 **Status:** Development. Names and semantics may change before 1.0.
-Machine-readable registry: [`attributes.yaml`](attributes.yaml).
+Machine-readable registry: [`attributes.yaml`](attributes.yaml). SDK constants are generated from it
+(`python3 spec/tools/generate_dotnet.py`), and CI fails if they drift.
 
 ## 1. Purpose
 
@@ -84,6 +85,20 @@ infer one from the exception type (for example a timeout exception maps to
 - Redacted spans set `tracescribe.redacted = true` and list keys in
   `tracescribe.redacted.keys`.
 
+### 3.5 Chat calls
+
+| Attribute | Type | Description |
+|---|---|---|
+| `tracescribe.chat.finish_reason` | string | The model's finish reason on an intent span wrapping a chat call (`stop`, `length`, `tool_calls`, `content_filter`). |
+
+SDK middleware for chat clients SHOULD map finish reasons to outcomes:
+
+| Finish reason | Outcome |
+|---|---|
+| `content_filter` | `failure`, `failure.class = policy` |
+| `length` | `partial` (truncated) |
+| anything else | the result of the configured outcome check (`success`, or a semantic failure) |
+
 ## 4. Events
 
 ### `tracescribe.decision`
@@ -120,7 +135,28 @@ invoke_agent claims-assistant        tracescribe.intent=claim.fnol.assist
 └── execute_tool decode_vin          tracescribe.failure.class=dependency.timeout
 ```
 
-## 7. Triage digest (informative)
+## 7. Logs
+
+Log records emitted while an intent span is active SHOULD carry `tracescribe.intent` with the value from
+the nearest enclosing intent span. This lets an agent fetch every log line for a failing business
+operation without knowing trace ids.
+
+Log bodies and attribute values SHOULD pass through the same redaction policy as
+`tracescribe.context.*`. Redacted records set `tracescribe.redacted = true`.
+
+## 8. Metrics
+
+Emitted on the `Tracescribe` meter when an intent span ends.
+
+| Metric | Instrument | Unit | Attributes |
+|---|---|---|---|
+| `tracescribe.operation.count` | Counter | `{operation}` | `tracescribe.intent`, `tracescribe.outcome.status`, `tracescribe.failure.class` (when set) |
+| `tracescribe.operation.duration` | Histogram | `s` | `tracescribe.intent`, `tracescribe.outcome.status` |
+
+`tracescribe.outcome.status = failure` with `tracescribe.failure.class = semantic` on the counter is a
+ready-made alert for semantic failures, which never show up in error-rate dashboards.
+
+## 9. Triage digest (informative)
 
 SDKs SHOULD provide a *digest*: a compact, plain-text rendering of a trace
 for agents. It shows the span tree with intent, outcome and failure class,
@@ -128,7 +164,13 @@ followed by a ranked list of root-cause candidates (deepest failing spans
 first, then semantic failures). This keeps a 200-span trace within a few
 hundred tokens.
 
-## 8. Versioning
+## 10. Versioning
 
 Emitters set `tracescribe.schema.version` on intent spans. Breaking changes
 bump the minor version while in Development, and the major version after 1.0.
+
+### Changes in 0.2.0
+
+- Added `tracescribe.chat.finish_reason` and chat outcome mapping (3.5).
+- Added log conventions (7) and metrics (8).
+- `tracescribe.redacted` also applies to log records.

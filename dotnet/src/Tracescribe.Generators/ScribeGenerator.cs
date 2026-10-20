@@ -435,7 +435,7 @@ internal static class Diagnostics
 
     public static readonly DiagnosticDescriptor NotPartialDeclaration = new(
         "TSCR001", "[Scribe] needs a partial method declaration",
-        "[Scribe] method '{0}' must be a partial method declaration without a body (e.g. 'public partial Task<T> {0}(...);')",
+        "[Scribe] method '{0}' must be a partial method declaration without a body, for example 'public partial Task<string> {0}(string id);'",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor AlreadyImplemented = new(
@@ -465,6 +465,6 @@ internal static class Diagnostics
 
     public static readonly DiagnosticDescriptor MissingIntent = new(
         "TSCR007", "Missing intent",
-        "[Scribe] on '{0}' needs a non-empty intent, e.g. [Scribe(\"claim.fnol.submit\")]",
+        "[Scribe] on '{0}' needs a non-empty intent, for example [Scribe(\"claim.fnol.submit\")]",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

@@ -1,0 +1,61 @@
+# OpenTelemetry Collector config for Tracescribe.
+#
+# 1. Redacts PII-shaped values that instrumentation outside Tracescribe may emit: exception messages on
+#    span events (recorded by ASP.NET Core, HttpClient, SDKs) and log bodies. Tracescribe's own SDK already
+#    redacts what it records; this covers everything else on the wire.
+# 2. Writes traces as OTLP/JSON lines that the Tracescribe MCP server and CLI can read directly:
+#      tracescribe-mcp failures --path /var/lib/otelcol
+# 3. Forwards everything to your real backend.
+#
+# Requires the contrib distribution (otelcol-contrib) for the transform processor and file exporter.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  transform/tracescribe-redaction:
+    error_mode: ignore
+    trace_statements:
+      - context: spanevent
+        statements:
+          - replace_pattern(attributes["exception.message"], "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}", "[REDACTED:email]")
+          - replace_pattern(attributes["exception.message"], "\\b\\d{3}-\\d{2}-\\d{4}\\b", "[REDACTED:ssn]")
+          - replace_pattern(attributes["exception.message"], "\\(?\\b\\d{3}\\)?[ .\\-]\\d{3}[ .\\-]\\d{4}\\b", "[REDACTED:phone]")
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}", "[REDACTED:email]")
+          - replace_pattern(body, "\\b\\d{3}-\\d{2}-\\d{4}\\b", "[REDACTED:ssn]")
+          - replace_pattern(body, "\\(?\\b\\d{3}\\)?[ .\\-]\\d{3}[ .\\-]\\d{4}\\b", "[REDACTED:phone]")
+  batch: {}
+
+exporters:
+  file/tracescribe:
+    path: /var/lib/otelcol/traces.jsonl
+    rotation:
+      max_megabytes: 50
+      max_backups: 3
+  otlp/backend:
+    endpoint: jaeger:4317 # or tempo:4317, or your vendor's OTLP endpoint
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [transform/tracescribe-redaction, batch]
+      exporters: [otlp/backend, file/tracescribe]
+    logs:
+      receivers: [otlp]
+      processors: [transform/tracescribe-redaction, batch]
+      exporters: [otlp/backend]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/backend]
