@@ -1,32 +1,36 @@
-# Tracescribe semantic conventions — machine-readable registry.
-# Status: Development (v0.1.0). Names may change before 1.0.
-# Language SDKs generate their constants from this file.
+# Tracescribe semantic conventions: machine-readable registry.
+# Status: Development. Names may change before 1.0.
+#
+# Language SDK constants are generated from this file:
+#   python3 spec/tools/generate_dotnet.py
+# CI fails if the generated files are out of date.
 
-schema_version: 0.1.0
+schema_version: 0.2.0
 namespace: tracescribe
+meter_name: Tracescribe
 
 attributes:
   - id: tracescribe.schema.version
     type: string
     brief: Version of the Tracescribe conventions the emitter follows.
-    examples: ["0.1.0"]
+    examples: ["0.2.0"]
 
   # ---- Intent -------------------------------------------------------------
   - id: tracescribe.intent
     type: string
-    brief: Stable, dot-separated name of the business operation this span performs.
-    note: Low cardinality. Must not contain identifiers. Use tracescribe.context.* for IDs.
+    brief: Stable, dot-separated name of the business operation.
+    note: Low cardinality. Must not contain identifiers; use tracescribe.context.* for IDs. Also set on log records emitted inside an intent span.
     examples: ["claim.fnol.submit", "policy.quote.rate", "payment.refund.issue"]
 
   - id: tracescribe.intent.description
     type: string
-    brief: One-sentence human description of what the operation is trying to achieve.
+    brief: One-sentence description of what the operation is trying to achieve.
 
   # ---- Outcome ------------------------------------------------------------
   - id: tracescribe.outcome.expected
     type: string
     brief: What a correct result looks like, stated before the work runs.
-    examples: ["claim accepted with claim number", "premium quote between 400 and 4000 USD"]
+    examples: ["claim accepted with claim number"]
 
   - id: tracescribe.outcome.actual
     type: string
@@ -34,28 +38,45 @@ attributes:
 
   - id: tracescribe.outcome.status
     type: enum
-    members: [success, failure, partial, unknown]
-    brief: Business-level result. Independent of span status — a span can be OTel OK and still be a failure here.
+    brief: Business-level result, independent of span status.
+    members:
+      - value: success
+        brief: The operation achieved its intent.
+      - value: failure
+        brief: The operation did not achieve its intent.
+      - value: partial
+        brief: Some of the intent was achieved.
+      - value: unknown
+        brief: No outcome was recorded.
 
   - id: tracescribe.outcome.matched
     type: boolean
     brief: Whether the actual outcome satisfied the expected outcome.
-    note: matched=false with span status OK identifies a semantic failure that no error handler saw.
+    note: matched=false with span status OK identifies a semantic failure.
 
   # ---- Failure ------------------------------------------------------------
   - id: tracescribe.failure.class
     type: enum
-    members:
-      - dependency          # downstream service/DB/queue failed
-      - dependency.timeout  # downstream did not answer in budget
-      - data                # input/state data missing, malformed, or inconsistent
-      - validation          # business rule rejected the request
-      - policy              # authz, quota, compliance, guardrail
-      - semantic            # ran without error but produced the wrong result
-      - configuration       # feature flag, setting, secret, deployment
-      - internal            # bug in this component
-      - unknown
     brief: Coarse failure category, chosen to route triage.
+    members:
+      - value: dependency
+        brief: A downstream service, database or queue failed.
+      - value: dependency.timeout
+        brief: A downstream call did not answer within its budget.
+      - value: data
+        brief: Input or state data was missing, malformed or inconsistent.
+      - value: validation
+        brief: A business rule rejected the request.
+      - value: policy
+        brief: Authorization, quota, compliance or guardrail block.
+      - value: semantic
+        brief: Ran without error but produced the wrong result.
+      - value: configuration
+        brief: Feature flag, setting, secret or deployment problem.
+      - value: internal
+        brief: Bug in this component.
+      - value: unknown
+        brief: Unclassified.
 
   - id: tracescribe.failure.reason
     type: string
@@ -69,20 +90,38 @@ attributes:
     type: boolean
     brief: True when failure.class was inferred by the SDK rather than set by the application.
 
-  # ---- Context ------------------------------------------------------------
-  - id: tracescribe.context.<key>
+  # ---- Context and redaction ----------------------------------------------
+  - id: tracescribe.context
     type: template[string]
-    brief: Business identifiers and facts that let an agent pivot to other data.
-    examples: ["tracescribe.context.claim_id", "tracescribe.context.policy_id", "tracescribe.context.state"]
+    brief: Business identifiers that let an agent pivot to other data, e.g. tracescribe.context.claim_id.
     note: Values pass through the redaction policy before export.
 
   - id: tracescribe.redacted
     type: boolean
-    brief: True when one or more values on this span were redacted.
+    brief: True when one or more values on this span or log record were redacted.
 
   - id: tracescribe.redacted.keys
     type: string[]
     brief: Attribute keys whose values were redacted.
+
+  # ---- Links --------------------------------------------------------------
+  - id: tracescribe.link.reason
+    type: enum
+    brief: Why a span links to another span. Set on span links.
+    members:
+      - value: caused_by
+        brief: The linked span caused this one.
+      - value: retry_of
+        brief: This span retries the linked span.
+      - value: compensates
+        brief: This span undoes the linked span's effects.
+      - value: follows_from
+        brief: This span logically follows the linked span.
+
+  # ---- GenAI chat outcomes ------------------------------------------------
+  - id: tracescribe.chat.finish_reason
+    type: string
+    brief: Finish reason reported by the model for a chat call, e.g. stop, length, tool_calls, content_filter.
 
 events:
   - name: tracescribe.decision
@@ -90,23 +129,35 @@ events:
     attributes:
       - id: tracescribe.decision.name
         type: string
+        brief: Stable name of the decision point.
         examples: ["vin.fallback"]
       - id: tracescribe.decision.chosen
         type: string
+        brief: The option taken.
       - id: tracescribe.decision.alternatives
         type: string[]
+        brief: Options that were available but not taken.
       - id: tracescribe.decision.rationale
         type: string
+        brief: Why the option was taken.
 
   - name: tracescribe.hint
     brief: Author-supplied pointer for whoever triages this span later.
     attributes:
       - id: tracescribe.hint.text
         type: string
+        brief: The hint.
         examples: ["If this fails in CA only, check flag rating.ca.v2"]
 
-links:
-  - attribute: tracescribe.link.reason
-    type: enum
-    members: [caused_by, retry_of, compensates, follows_from]
-    brief: Why this span is linked to another span.
+metrics:
+  - name: tracescribe.operation.count
+    instrument: counter
+    unit: "{operation}"
+    brief: Number of completed intent operations.
+    attributes: [tracescribe.intent, tracescribe.outcome.status, tracescribe.failure.class]
+
+  - name: tracescribe.operation.duration
+    instrument: histogram
+    unit: s
+    brief: Duration of completed intent operations.
+    attributes: [tracescribe.intent, tracescribe.outcome.status]

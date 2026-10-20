@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Tracescribe\Tracescribe.csproj" />
+    <ProjectReference Include="..\..\src\Tracescribe.Query\Tracescribe.Query.csproj" />
   </ItemGroup>
 </Project>

@@ -138,13 +138,40 @@ public static class ActivityExtensions
         activity.AddEvent(new ActivityEvent(TracescribeEvents.Hint,
             tags: new ActivityTagsCollection { [TracescribeEvents.HintText] = text }));
 
-    /// <summary>Adds an OTel-conventional <c>exception</c> event (type, message, stack trace).</summary>
-    public static Activity RecordExceptionEvent(this Activity activity, Exception exception)
+    /// <summary>
+    /// Records a failure from an exception, inferring <c>tracescribe.failure.class</c> and retryability
+    /// with <see cref="FailureClassifier.FromException"/>. The reason defaults to the redacted exception message.
+    /// </summary>
+    public static Activity RecordFailure(this Activity activity, Exception exception, string? reason = null, string? actual = null)
     {
+        ArgumentNullException.ThrowIfNull(exception);
+        var classification = FailureClassifier.FromException(exception);
+        activity.RecordFailure(
+            classification?.FailureClass ?? FailureClassValues.Unknown,
+            reason ?? TracescribeRedaction.RedactText(exception.Message, "exception.message"),
+            classification?.Retryable,
+            exception,
+            actual);
+        activity.SetTag(TracescribeAttributes.FailureInferred, true);
+        return activity;
+    }
+
+    /// <summary>
+    /// Adds an OTel-conventional <c>exception</c> event (type, message, stack trace). The message passes
+    /// through <paramref name="redactor"/>, or <see cref="TracescribeRedaction.Default"/> when not given.
+    /// </summary>
+    public static Activity RecordExceptionEvent(this Activity activity, Exception exception, IRedactor? redactor = null)
+    {
+        var message = (redactor ?? TracescribeRedaction.Default).Redact("exception.message", exception.Message, out var redacted);
+        if (redacted)
+        {
+            activity.SetTag(TracescribeAttributes.Redacted, true);
+        }
+
         var tags = new ActivityTagsCollection
         {
             ["exception.type"] = exception.GetType().FullName,
-            ["exception.message"] = exception.Message,
+            ["exception.message"] = message,
         };
         if (exception.StackTrace is { } stack)
         {

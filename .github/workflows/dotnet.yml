@@ -2,7 +2,6 @@ name: dotnet
 
 on:
   push:
-    branches: [main]
     paths: ["dotnet/**", "spec/**", ".github/workflows/dotnet.yml"]
   pull_request:
     paths: ["dotnet/**", "spec/**", ".github/workflows/dotnet.yml"]
@@ -18,8 +17,35 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check generated constants match spec
+        working-directory: .
+        run: |
+          pip install pyyaml
+          python spec/tools/generate_dotnet.py --check
+
       - run: dotnet restore Tracescribe.sln
       - run: dotnet build Tracescribe.sln -c Release --no-restore
       - run: dotnet test Tracescribe.sln -c Release --no-build --logger "console;verbosity=normal"
-      - name: Run sample
-        run: dotnet run --project samples/ClaimIntake -c Release --no-build
+
+      - name: Run sample and export its trace
+        run: dotnet run --project samples/ClaimIntake -c Release --no-build -- --export ${{ runner.temp }}/claim-trace.json
+
+      - name: CLI against the exported trace
+        run: |
+          dotnet run --project src/Tracescribe.Mcp -c Release --no-build -- failures --path ${{ runner.temp }}/claim-trace.json
+          dotnet run --project src/Tracescribe.Mcp -c Release --no-build -- services --path ${{ runner.temp }}/claim-trace.json
+
+      - name: MCP server smoke test (stdio)
+        run: python tests/mcp_smoke.py ${{ runner.temp }}/claim-trace.json -- dotnet src/Tracescribe.Mcp/bin/Release/net8.0/Tracescribe.Mcp.dll
+
+      - name: Pack
+        run: dotnet pack Tracescribe.sln -c Release --no-build -o ${{ runner.temp }}/packages
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: ${{ runner.temp }}/packages

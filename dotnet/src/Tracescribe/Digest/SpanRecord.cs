@@ -69,15 +69,20 @@ public sealed record SpanRecord(
                 ToDictionary(l.Tags ?? Enumerable.Empty<KeyValuePair<string, object?>>()))).ToList());
     }
 
+    /// <summary>Service that emitted the span (OTel resource <c>service.name</c>), when known.</summary>
+    public string? Service { get; init; }
+
     /// <summary>Returns an attribute rendered as a string, or <c>null</c>.</summary>
     public string? Get(string key) => Attributes.TryGetValue(key, out var v) ? Format(v) : null;
 
-    internal static string? Format(object? value) => value switch
+    /// <summary>Renders an attribute value as a single string (arrays are comma-joined).</summary>
+    public static string? Format(object? value) => value switch
     {
         null => null,
         string s => s,
         bool b => b ? "true" : "false",
         IEnumerable<string> list => string.Join(", ", list),
+        System.Collections.IEnumerable items => string.Join(", ", items.Cast<object?>().Select(Format)),
         IFormattable f => f.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
         _ => value.ToString(),
     };

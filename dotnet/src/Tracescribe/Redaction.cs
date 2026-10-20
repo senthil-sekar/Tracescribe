@@ -105,3 +105,23 @@ public sealed partial class DefaultRedactor : IRedactor
     [GeneratedRegex(@"(?<!\w)(?:\+?1[ .\-]?)?\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}\b")]
     private static partial Regex Phone();
 }
+
+/// <summary>Process-wide redaction defaults.</summary>
+public static class TracescribeRedaction
+{
+    private static IRedactor _default = new DefaultRedactor();
+
+    /// <summary>
+    /// Redactor used for exception messages recorded by Tracescribe, by <see cref="Digest.TriageDigest"/>
+    /// and by components that are not given an explicit redactor. Set once at startup.
+    /// </summary>
+    public static IRedactor Default
+    {
+        get => Volatile.Read(ref _default);
+        set => Volatile.Write(ref _default, value ?? throw new ArgumentNullException(nameof(value)));
+    }
+
+    /// <summary>Applies <paramref name="redactor"/> (or <see cref="Default"/>) to free text such as a message.</summary>
+    public static string RedactText(string text, string key = "text", IRedactor? redactor = null) =>
+        (redactor ?? Default).Redact(key, text, out _);
+}

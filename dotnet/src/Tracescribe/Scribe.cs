@@ -117,6 +117,16 @@ public sealed class ScribeOperation : IDisposable
     }
 
     /// <summary>
+    /// Marks the operation failed from an exception. The failure class and retryability are inferred
+    /// (<see cref="FailureClassifier.FromException"/>) and flagged with <c>tracescribe.failure.inferred</c>.
+    /// </summary>
+    public void Fail(Exception exception, string? reason = null, string? actual = null)
+    {
+        Activity?.RecordFailure(exception, reason, actual);
+        _outcomeRecorded = true;
+    }
+
+    /// <summary>
     /// Records a semantic failure: the work completed without error but the result does not match
     /// the expected outcome. Span status is left unchanged.
     /// </summary>

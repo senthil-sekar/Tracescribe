@@ -16,6 +16,12 @@ public sealed class TriageDigestOptions
 
     /// <summary>Render <c>tracescribe.context.*</c> values.</summary>
     public bool IncludeContext { get; set; } = true;
+
+    /// <summary>
+    /// Redactor applied to every rendered value, so digests stay safe even when built from raw backend
+    /// data that was never enriched. Defaults to <see cref="TracescribeRedaction.Default"/>; <c>null</c> disables.
+    /// </summary>
+    public IRedactor? Redactor { get; set; } = TracescribeRedaction.Default;
 }
 
 /// <summary>Health of a span as seen by triage.</summary>
@@ -45,6 +51,7 @@ public enum SpanHealth
 /// <param name="Path">Span names from root to this span.</param>
 /// <param name="ExceptionMessage">First exception, if any.</param>
 /// <param name="Context">Business context.</param>
+/// <param name="Service">Service that emitted the span, when known.</param>
 public sealed record RootCauseCandidate(
     int Rank,
     string SpanId,
@@ -56,7 +63,8 @@ public sealed record RootCauseCandidate(
     bool? Retryable,
     string Path,
     string? ExceptionMessage,
-    IReadOnlyDictionary<string, string> Context);
+    IReadOnlyDictionary<string, string> Context,
+    string? Service = null);
 
 /// <summary>Digest of one trace.</summary>
 /// <param name="TraceId">Trace id.</param>
@@ -197,6 +205,11 @@ public static class TriageDigest
             {
                 sb.Append(c.Rank).Append(". ").Append(c.Name)
                   .Append(" [").Append(HealthLabel(c.Health)).Append(']');
+                if (c.Service is not null)
+                {
+                    sb.Append(" svc=").Append(c.Service);
+                }
+
                 if (c.FailureClass is not null)
                 {
                     sb.Append(" class=").Append(c.FailureClass).Append(c.Inferred ? "(inferred)" : string.Empty);
@@ -268,7 +281,8 @@ public static class TriageDigest
             ParseBool(n.Span.Get(TracescribeAttributes.FailureRetryable)),
             PathOf(n),
             Truncate(FirstException(n.Span), o),
-            o.IncludeContext ? ContextOf(n, o) : new Dictionary<string, string>())).ToList();
+            o.IncludeContext ? ContextOf(n, o) : new Dictionary<string, string>(),
+            n.Span.Service)).ToList();
     }
 
     private static void RenderNode(StringBuilder sb, Node n, string prefix, bool isLast, bool isRoot, TriageDigestOptions o)
@@ -279,6 +293,11 @@ public static class TriageDigest
 
         sb.Append(prefix).Append(branch).Append('[').Append(HealthLabel(n.Health)).Append("] ").Append(s.Name)
           .Append(' ').Append(FormatDuration(s.Duration));
+
+        if (s.Service is not null && (n.Parent is null || n.Parent.Span.Service != s.Service))
+        {
+            sb.Append(" svc=").Append(s.Service);
+        }
 
         var intent = s.Get(TracescribeAttributes.Intent);
         if (intent is not null && intent != s.Name)
@@ -447,7 +466,9 @@ public static class TriageDigest
             if (kv.Key.StartsWith(TracescribeAttributes.ContextPrefix, StringComparison.Ordinal)
                 && SpanRecord.Format(kv.Value) is { } v)
             {
-                ctx[kv.Key[TracescribeAttributes.ContextPrefix.Length..]] = Truncate(v, o)!;
+                var key = kv.Key[TracescribeAttributes.ContextPrefix.Length..];
+                var safe = o.Redactor is null ? v : o.Redactor.Redact(key, v, out _);
+                ctx[key] = Truncate(safe, o)!;
             }
         }
 
@@ -481,7 +502,7 @@ public static class TriageDigest
             return null;
         }
 
-        var single = value.ReplaceLineEndings(" ");
+        var single = (o.Redactor is null ? value : o.Redactor.Redact("text", value, out _)).ReplaceLineEndings(" ");
         return single.Length <= o.MaxValueLength ? single : string.Concat(single.AsSpan(0, o.MaxValueLength), "…");
     }
 

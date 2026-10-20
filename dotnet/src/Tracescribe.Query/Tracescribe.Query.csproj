@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Read traces from Jaeger, Grafana Tempo or OTLP/JSON files and turn them into Tracescribe triage digests. No dependencies beyond the BCL.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tracescribe\Tracescribe.csproj" />
+  </ItemGroup>
+</Project>

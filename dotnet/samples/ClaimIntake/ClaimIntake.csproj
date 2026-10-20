@@ -6,5 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Tracescribe\Tracescribe.csproj" />
+    <!-- In your own project: <PackageReference Include="Tracescribe.Generators" /> -->
+    <ProjectReference Include="..\..\src\Tracescribe.Generators\Tracescribe.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

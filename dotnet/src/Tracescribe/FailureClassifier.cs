@@ -41,6 +41,78 @@ public static class FailureClassifier
         ["InvalidCastException"] = new(FailureClassValues.Internal, false),
     };
 
+    /// <summary>
+    /// Classifies a live exception. Looks, in order, at HTTP-style status codes the exception exposes
+    /// (<see cref="System.Net.Http.HttpRequestException.StatusCode"/>, or a <c>Status</c>/<c>StatusCode</c>
+    /// property as on Azure and OpenAI SDK exceptions), then at the exception's type and base types,
+    /// then at inner exceptions.
+    /// </summary>
+    public static FailureClassification? FromException(Exception? exception)
+    {
+        var depth = 0;
+        for (var ex = exception; ex is not null && depth < 8; ex = ex.InnerException, depth++)
+        {
+            if (ex is AggregateException { InnerExceptions.Count: 1 } agg)
+            {
+                return FromException(agg.InnerExceptions[0]);
+            }
+
+            if (StatusCodeOf(ex) is { } code && FromHttpStatus(code) is { } fromStatus)
+            {
+                return fromStatus;
+            }
+
+            // HttpClient reports its own timeout as TaskCanceledException wrapping TimeoutException.
+            if (ex is TaskCanceledException { InnerException: TimeoutException })
+            {
+                return new(FailureClassValues.DependencyTimeout, true);
+            }
+
+            for (var t = ex.GetType(); t is not null && t != typeof(Exception) && t != typeof(SystemException); t = t.BaseType)
+            {
+                if (FromExceptionType(t.Name) is { } fromType)
+                {
+                    return fromType;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static int? StatusCodeOf(Exception ex)
+    {
+        if (ex is System.Net.Http.HttpRequestException { StatusCode: { } httpStatus })
+        {
+            return (int)httpStatus;
+        }
+
+        foreach (var name in StatusPropertyNames)
+        {
+            object? value;
+            try
+            {
+                value = ex.GetType().GetProperty(name)?.GetValue(ex);
+            }
+            catch (Exception e) when (e is System.Reflection.AmbiguousMatchException or System.Reflection.TargetInvocationException)
+            {
+                continue;
+            }
+
+            switch (value)
+            {
+                case int i when i >= 100 && i <= 599:
+                    return i;
+                case System.Net.HttpStatusCode h:
+                    return (int)h;
+            }
+        }
+
+        return null;
+    }
+
+    private static readonly string[] StatusPropertyNames = ["Status", "StatusCode"];
+
     /// <summary>Classifies from a full or short exception type name.</summary>
     public static FailureClassification? FromExceptionType(string? exceptionType)
     {

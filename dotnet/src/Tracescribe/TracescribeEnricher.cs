@@ -8,13 +8,19 @@ namespace Tracescribe;
 public sealed class TracescribeEnricherOptions
 {
     /// <summary>Redaction policy for <c>tracescribe.context.*</c> values. Set to <c>null</c> to disable.</summary>
-    public IRedactor? Redactor { get; set; } = new DefaultRedactor();
+    public IRedactor? Redactor { get; set; } = TracescribeRedaction.Default;
 
     /// <summary>Infer <c>tracescribe.failure.class</c> on error spans that lack one.</summary>
     public bool InferFailureClass { get; set; } = true;
 
     /// <summary>Set <c>tracescribe.outcome.status</c> on intent spans that end without one.</summary>
     public bool DefaultOutcome { get; set; } = true;
+
+    /// <summary>
+    /// Record <c>tracescribe.operation.count</c> and <c>tracescribe.operation.duration</c> for intent spans
+    /// on the <c>Tracescribe</c> meter.
+    /// </summary>
+    public bool RecordMetrics { get; set; } = true;
 }
 
 /// <summary>
@@ -44,8 +50,19 @@ public sealed class TracescribeEnricher
         }
     }
 
+    private const string EnrichedMarker = "Tracescribe.Enriched";
+
     private void Enrich(Activity activity)
     {
+        // Idempotent: a span seen by more than one enricher (e.g. a collector and an OTel processor)
+        // is enriched and counted once.
+        if (activity.GetCustomProperty(EnrichedMarker) is not null)
+        {
+            return;
+        }
+
+        activity.SetCustomProperty(EnrichedMarker, true);
+
         var isError = activity.Status == ActivityStatusCode.Error;
         var hasIntent = activity.GetTagItem(TracescribeAttributes.Intent) is not null;
 
@@ -73,6 +90,11 @@ public sealed class TracescribeEnricher
         if (_options.Redactor is { } redactor)
         {
             Redact(activity, redactor);
+        }
+
+        if (hasIntent && _options.RecordMetrics)
+        {
+            TracescribeInstruments.Record(activity);
         }
     }
 
