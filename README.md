@@ -1,6 +1,6 @@
 # Tracescribe
 
-**OpenTelemetry, written for agents to read.**
+**The scribe that writes your traces for AI agents to read.**
 
 Tracescribe extends the OpenTelemetry GenAI semantic conventions with triage-ready signals (intent,
 expected vs. actual outcome, failure class, decisions and business context) so AI agents can debug
