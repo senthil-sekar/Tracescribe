@@ -56,7 +56,8 @@ public class OpenTelemetryTests
             }
         }
 
-        var span = Assert.Single(capture.Spans);
+        // AddTracescribe also listens to the shared Tracescribe source, which parallel tests write to.
+        var span = Assert.Single(capture.Spans, s => s.Source.Name == source.Name);
         Assert.Equal(FailureClassValues.Policy, span.GetTagItem(TracescribeAttributes.FailureClass));
         Assert.True(span.GetTagItem(TracescribeAttributes.FailureRetryable) is true);
     }
