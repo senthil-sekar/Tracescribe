@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>OpenTelemetry .NET integration for Tracescribe: a span processor that infers failure classes, sets default outcomes and redacts business context before export.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry" Version="1.9.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tracescribe\Tracescribe.csproj" />
+  </ItemGroup>
+</Project>

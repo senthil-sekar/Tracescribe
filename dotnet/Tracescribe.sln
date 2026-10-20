@@ -1,0 +1,59 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{EE118B20-7EE2-47E4-B60D-4CB011422AA6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tracescribe.OpenTelemetry", "src\Tracescribe.OpenTelemetry\Tracescribe.OpenTelemetry.csproj", "{CA0BFEBA-883D-47A3-A4E9-D993BAA1E105}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tracescribe.SemanticConventions", "src\Tracescribe.SemanticConventions\Tracescribe.SemanticConventions.csproj", "{5A893B81-E9B4-4089-B648-8CDF38855EA7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tracescribe", "src\Tracescribe\Tracescribe.csproj", "{B6B07F13-752C-46E4-947C-9427136C3171}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7E51F72F-9F69-4185-85FC-6D330FF434A9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tracescribe.Tests", "tests\Tracescribe.Tests\Tracescribe.Tests.csproj", "{16711D8E-CD5E-4164-93BC-6A04BA77A917}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{2CC43609-7AB9-4BBB-B236-83F83854719A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClaimIntake", "samples\ClaimIntake\ClaimIntake.csproj", "{3F9E5F02-E3D4-406F-AFF8-0AA7E39C05EC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CA0BFEBA-883D-47A3-A4E9-D993BAA1E105}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA0BFEBA-883D-47A3-A4E9-D993BAA1E105}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA0BFEBA-883D-47A3-A4E9-D993BAA1E105}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA0BFEBA-883D-47A3-A4E9-D993BAA1E105}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A893B81-E9B4-4089-B648-8CDF38855EA7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A893B81-E9B4-4089-B648-8CDF38855EA7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A893B81-E9B4-4089-B648-8CDF38855EA7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A893B81-E9B4-4089-B648-8CDF38855EA7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B6B07F13-752C-46E4-947C-9427136C3171}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B6B07F13-752C-46E4-947C-9427136C3171}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B6B07F13-752C-46E4-947C-9427136C3171}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B6B07F13-752C-46E4-947C-9427136C3171}.Release|Any CPU.Build.0 = Release|Any CPU
+		{16711D8E-CD5E-4164-93BC-6A04BA77A917}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16711D8E-CD5E-4164-93BC-6A04BA77A917}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16711D8E-CD5E-4164-93BC-6A04BA77A917}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16711D8E-CD5E-4164-93BC-6A04BA77A917}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3F9E5F02-E3D4-406F-AFF8-0AA7E39C05EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3F9E5F02-E3D4-406F-AFF8-0AA7E39C05EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3F9E5F02-E3D4-406F-AFF8-0AA7E39C05EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3F9E5F02-E3D4-406F-AFF8-0AA7E39C05EC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{CA0BFEBA-883D-47A3-A4E9-D993BAA1E105} = {EE118B20-7EE2-47E4-B60D-4CB011422AA6}
+		{5A893B81-E9B4-4089-B648-8CDF38855EA7} = {EE118B20-7EE2-47E4-B60D-4CB011422AA6}
+		{B6B07F13-752C-46E4-947C-9427136C3171} = {EE118B20-7EE2-47E4-B60D-4CB011422AA6}
+		{16711D8E-CD5E-4164-93BC-6A04BA77A917} = {7E51F72F-9F69-4185-85FC-6D330FF434A9}
+		{3F9E5F02-E3D4-406F-AFF8-0AA7E39C05EC} = {2CC43609-7AB9-4BBB-B236-83F83854719A}
+	EndGlobalSection
+EndGlobal

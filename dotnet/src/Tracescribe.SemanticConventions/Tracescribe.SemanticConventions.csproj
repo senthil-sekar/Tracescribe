@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Attribute, event and enum constants for the Tracescribe semantic conventions.</Description>
+  </PropertyGroup>
+</Project>

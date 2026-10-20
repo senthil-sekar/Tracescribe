@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Triage-ready instrumentation for .NET on top of System.Diagnostics.Activity: intent, expected vs. actual outcome, failure classes, decisions, redaction and agent-readable trace digests. No dependencies beyond the BCL.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tracescribe.SemanticConventions\Tracescribe.SemanticConventions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tracescribe.Tests" />
+  </ItemGroup>
+</Project>

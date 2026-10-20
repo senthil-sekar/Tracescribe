@@ -1,0 +1,112 @@
+# Tracescribe semantic conventions — machine-readable registry.
+# Status: Development (v0.1.0). Names may change before 1.0.
+# Language SDKs generate their constants from this file.
+
+schema_version: 0.1.0
+namespace: tracescribe
+
+attributes:
+  - id: tracescribe.schema.version
+    type: string
+    brief: Version of the Tracescribe conventions the emitter follows.
+    examples: ["0.1.0"]
+
+  # ---- Intent -------------------------------------------------------------
+  - id: tracescribe.intent
+    type: string
+    brief: Stable, dot-separated name of the business operation this span performs.
+    note: Low cardinality. Must not contain identifiers. Use tracescribe.context.* for IDs.
+    examples: ["claim.fnol.submit", "policy.quote.rate", "payment.refund.issue"]
+
+  - id: tracescribe.intent.description
+    type: string
+    brief: One-sentence human description of what the operation is trying to achieve.
+
+  # ---- Outcome ------------------------------------------------------------
+  - id: tracescribe.outcome.expected
+    type: string
+    brief: What a correct result looks like, stated before the work runs.
+    examples: ["claim accepted with claim number", "premium quote between 400 and 4000 USD"]
+
+  - id: tracescribe.outcome.actual
+    type: string
+    brief: Short summary of what actually happened.
+
+  - id: tracescribe.outcome.status
+    type: enum
+    members: [success, failure, partial, unknown]
+    brief: Business-level result. Independent of span status — a span can be OTel OK and still be a failure here.
+
+  - id: tracescribe.outcome.matched
+    type: boolean
+    brief: Whether the actual outcome satisfied the expected outcome.
+    note: matched=false with span status OK identifies a semantic failure that no error handler saw.
+
+  # ---- Failure ------------------------------------------------------------
+  - id: tracescribe.failure.class
+    type: enum
+    members:
+      - dependency          # downstream service/DB/queue failed
+      - dependency.timeout  # downstream did not answer in budget
+      - data                # input/state data missing, malformed, or inconsistent
+      - validation          # business rule rejected the request
+      - policy              # authz, quota, compliance, guardrail
+      - semantic            # ran without error but produced the wrong result
+      - configuration       # feature flag, setting, secret, deployment
+      - internal            # bug in this component
+      - unknown
+    brief: Coarse failure category, chosen to route triage.
+
+  - id: tracescribe.failure.reason
+    type: string
+    brief: One-line, PII-free explanation of the failure.
+
+  - id: tracescribe.failure.retryable
+    type: boolean
+    brief: Whether retrying the same request could plausibly succeed.
+
+  - id: tracescribe.failure.inferred
+    type: boolean
+    brief: True when failure.class was inferred by the SDK rather than set by the application.
+
+  # ---- Context ------------------------------------------------------------
+  - id: tracescribe.context.<key>
+    type: template[string]
+    brief: Business identifiers and facts that let an agent pivot to other data.
+    examples: ["tracescribe.context.claim_id", "tracescribe.context.policy_id", "tracescribe.context.state"]
+    note: Values pass through the redaction policy before export.
+
+  - id: tracescribe.redacted
+    type: boolean
+    brief: True when one or more values on this span were redacted.
+
+  - id: tracescribe.redacted.keys
+    type: string[]
+    brief: Attribute keys whose values were redacted.
+
+events:
+  - name: tracescribe.decision
+    brief: A branch the code took that changes downstream behavior.
+    attributes:
+      - id: tracescribe.decision.name
+        type: string
+        examples: ["vin.fallback"]
+      - id: tracescribe.decision.chosen
+        type: string
+      - id: tracescribe.decision.alternatives
+        type: string[]
+      - id: tracescribe.decision.rationale
+        type: string
+
+  - name: tracescribe.hint
+    brief: Author-supplied pointer for whoever triages this span later.
+    attributes:
+      - id: tracescribe.hint.text
+        type: string
+        examples: ["If this fails in CA only, check flag rating.ca.v2"]
+
+links:
+  - attribute: tracescribe.link.reason
+    type: enum
+    members: [caused_by, retry_of, compensates, follows_from]
+    brief: Why this span is linked to another span.
