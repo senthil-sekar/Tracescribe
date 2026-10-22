@@ -2,14 +2,23 @@
 
 **The scribe that writes your traces for AI agents to read.**
 
+[![NuGet](https://img.shields.io/nuget/vpre/Tracescribe?label=Tracescribe)](https://www.nuget.org/packages/Tracescribe)
+[![NuGet](https://img.shields.io/nuget/vpre/Tracescribe.Mcp?label=Tracescribe.Mcp)](https://www.nuget.org/packages/Tracescribe.Mcp)
+[![dotnet](https://github.com/senthil-sekar/Tracescribe/actions/workflows/dotnet.yml/badge.svg)](https://github.com/senthil-sekar/Tracescribe/actions/workflows/dotnet.yml)
+
 Tracescribe extends the OpenTelemetry GenAI semantic conventions with triage-ready signals (intent,
 expected vs. actual outcome, failure class, decisions and business context) so AI agents can debug
 traces, logs and metrics faster. It ships an MCP server that hands agents a compact digest of any trace,
 and the logs written inside any business operation, from Jaeger, Grafana Tempo and Loki, Azure Monitor /
 Application Insights, or OTLP/JSON files. .NET first.
 
-> Status: **v0.3 alpha, Development.** Attribute names may change before 1.0. NuGet publishing is wired up
-> (see [Releasing](#releasing)); until the first release, build from source.
+> Status: **v0.3 alpha, Development.** Attribute names may change before 1.0. Packages are on
+> [nuget.org](https://www.nuget.org/profiles/senthilsekar) as prereleases.
+
+```bash
+dotnet add package Tracescribe.OpenTelemetry --prerelease   # or any package below
+dotnet tool install -g Tracescribe.Mcp --prerelease          # MCP server and CLI: tracescribe-mcp
+```
 
 ## Why
 
@@ -141,16 +150,17 @@ config that redacts in the pipeline and also writes OTLP/JSON trace and log file
 | `file` | OTLP/JSON or Jaeger JSON files (Collector file exporter, Tempo exports, `OtlpJsonWriter`) | OTLP/JSON log files in the same place |
 
 ```bash
-cd dotnet
-dotnet build src/Tracescribe.Mcp -c Release
-# or, once published: dotnet tool install -g Tracescribe.Mcp --prerelease
+dotnet tool install -g Tracescribe.Mcp --prerelease
 ```
+
+From source instead: `dotnet build dotnet/src/Tracescribe.Mcp -c Release`, then run
+`dotnet .../bin/Release/net8.0/Tracescribe.Mcp.dll` wherever the examples say `tracescribe-mcp`.
 
 **Claude Code**
 
 ```bash
 claude mcp add tracescribe -e TRACESCRIBE_BACKEND=jaeger -e TRACESCRIBE_URL=http://localhost:16686 \
-  -- dotnet /path/to/tracescribe/dotnet/src/Tracescribe.Mcp/bin/Release/net8.0/Tracescribe.Mcp.dll
+  -- tracescribe-mcp
 ```
 
 **Claude Desktop, Cursor, VS Code** (`mcpServers` config)
@@ -159,8 +169,7 @@ claude mcp add tracescribe -e TRACESCRIBE_BACKEND=jaeger -e TRACESCRIBE_URL=http
 {
   "mcpServers": {
     "tracescribe": {
-      "command": "dotnet",
-      "args": ["/path/to/tracescribe/dotnet/src/Tracescribe.Mcp/bin/Release/net8.0/Tracescribe.Mcp.dll"],
+      "command": "tracescribe-mcp",
       "env": { "TRACESCRIBE_BACKEND": "tempo", "TRACESCRIBE_URL": "http://localhost:3200" }
     }
   }
@@ -294,7 +303,9 @@ so no API key is stored. One-time setup:
 2. Add a repository secret `NUGET_USER` with your nuget.org profile name.
 3. Optionally, add required reviewers to the `nuget` environment.
 
-Then `git tag v0.3.0-alpha && git push origin v0.3.0-alpha`. The tag sets the package version.
+To release, bump `VersionPrefix` in [`dotnet/Directory.Build.props`](dotnet/Directory.Build.props), merge, then tag
+`main` with the same version: `git tag v0.3.1-alpha && git push origin v0.3.1-alpha`, or create a GitHub release with
+that tag. The tag sets the package version; nuget.org versions can be unlisted but never replaced.
 
 ## Roadmap
 
@@ -303,6 +314,7 @@ Done in v0.3:
 - [x] `find_logs` MCP tool and `logs` CLI command keyed by `tracescribe.intent`, over Loki, Azure Monitor and OTLP/JSON log files
 - [x] Azure Monitor / Application Insights backend (KQL over a Log Analytics workspace, Entra ID sign-in)
 - [x] NuGet packaging: package READMEs, symbols, SourceLink, tag-driven release with trusted publishing; `Tracescribe.Mcp` as a .NET tool
+- [x] First nuget.org release, `0.3.0-alpha`: `dotnet tool install -g Tracescribe.Mcp --prerelease`
 
 Done in v0.2:
 
@@ -316,7 +328,6 @@ Done in v0.2:
 
 Next:
 
-- [ ] First nuget.org release (needs the trusted publishing policy above), then `dotnet tool install -g Tracescribe.Mcp`
 - [ ] Java SDK sharing `spec/`
 
 ## Prior art
