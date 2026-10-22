@@ -12,14 +12,18 @@ traces, logs and metrics faster. It ships an MCP server that hands agents a comp
 and the logs written inside any business operation, from Jaeger, Grafana Tempo and Loki, Azure Monitor /
 Application Insights, or OTLP/JSON files. .NET first.
 
-> Status: **v0.4, heading to 1.0.** The conventions are marked stable or development
-> ([spec section 10](spec/SPEC.md#10-versioning-and-stability)) and the .NET API is checked for breaking changes
-> on every build. Packages are on [nuget.org](https://www.nuget.org/profiles/senthilsekar) as prereleases.
+> Status: **1.0.0 release candidate.** The API and the stable conventions are what 1.0 will ship
+> ([versioning](docs/versioning.md)). Packages are on [nuget.org](https://www.nuget.org/profiles/senthilsekar)
+> as prereleases.
 
 ```bash
 dotnet add package Tracescribe.OpenTelemetry --prerelease   # or any package below
 dotnet tool install -g Tracescribe.Mcp --prerelease          # MCP server and CLI: tracescribe-mcp
 ```
+
+**Docs:** [Getting started](docs/getting-started.md) · [Backends](docs/backends.md) ·
+[Conventions](spec/SPEC.md) · [Versioning](docs/versioning.md) · [Performance](docs/performance.md) ·
+[Security](SECURITY.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## Why
 
@@ -137,7 +141,9 @@ config that redacts in the pipeline and also writes OTLP/JSON trace and log file
 
 ## Triage with an agent (MCP)
 
-`tracescribe-mcp` is an MCP server with four tools:
+`tracescribe-mcp` is an MCP server with four read-only tools. Telemetry can contain text written by end users or
+attackers, so every result is reduced to safe single lines and wrapped in `<telemetry>` markers that tell the
+agent to treat it as data ([SECURITY.md](SECURITY.md)).
 
 | Tool | What the agent gets |
 |---|---|
@@ -313,6 +319,13 @@ that tag. The tag sets the package version; nuget.org versions can be unlisted b
 
 ## Roadmap
 
+Done in 1.0.0-rc.1:
+
+- [x] Integration tests against real Jaeger, Tempo and Loki containers in CI (they found and fixed a Jaeger array bug)
+- [x] Benchmarks and published overhead numbers
+- [x] MCP output marked as untrusted data; telemetry text reduced to safe single lines
+- [x] Docs, changelog, security policy, contributing guide
+
 Done in v0.4 (1.0 groundwork):
 
 - [x] Target frameworks: .NET 8, .NET 10 and .NET Standard 2.0 for the libraries services reference
@@ -337,10 +350,10 @@ Done in v0.2:
 - [x] Source generator for `[Scribe]` methods
 - [x] Constants generated from `spec/attributes.yaml`
 
-Next, for 1.0:
+Next:
 
-- [ ] 1.0.0-rc.1: integration tests against real Jaeger, Tempo and Loki; benchmarks; MCP output hardening; docs
-- [ ] 1.0.0 after the release candidate runs in a real service
+- [ ] 1.0.0, after the release candidate runs in a real service for a few weeks
+- [ ] Azure Monitor checked against a live workspace
 - [ ] Java SDK sharing `spec/`
 
 ## Prior art
