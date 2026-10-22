@@ -13,7 +13,7 @@
     <RepositoryUrl>https://github.com/senthil-sekar/tracescribe</RepositoryUrl>
     <PackageTags>opentelemetry;observability;ai-agents;tracing;triage</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <VersionPrefix>0.3.0</VersionPrefix>
+    <VersionPrefix>0.3.1</VersionPrefix>
     <VersionSuffix>alpha</VersionSuffix>
 
     <!-- Symbols and SourceLink so consumers can step into Tracescribe from the NuGet package. -->
