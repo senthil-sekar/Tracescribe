@@ -1,11 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0;net10.0</TargetFrameworks>
     <Description>Triage-ready instrumentation for .NET on top of System.Diagnostics.Activity: intent, expected vs. actual outcome, failure classes, decisions, redaction and agent-readable trace digests. No dependencies beyond the BCL.</Description>
   </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="System.Diagnostics.DiagnosticSource" />
+    <PackageReference Include="System.Text.Json" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Tracescribe.SemanticConventions\Tracescribe.SemanticConventions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Tracescribe.Tests" />
+    <InternalsVisibleTo Include="Tracescribe.NetStandard.Tests" />
   </ItemGroup>
 </Project>

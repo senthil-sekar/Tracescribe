@@ -1,42 +1,55 @@
 # Tracescribe semantic conventions: machine-readable registry.
-# Status: Development. Names may change before 1.0.
+# Status: Release candidate for 1.0. See spec/SPEC.md section 10 for the stability rules.
+#
+# Every attribute, event and metric declares a stability:
+#   stable       never renamed, removed or retyped without a major version
+#   development  may change in a minor version (depends on conventions that are not stable upstream)
 #
 # Language SDK constants are generated from this file:
 #   python3 spec/tools/generate_dotnet.py
 # CI fails if the generated files are out of date.
 
-schema_version: 0.2.0
+schema_version: 0.4.0
 namespace: tracescribe
 meter_name: Tracescribe
 
 attributes:
   - id: tracescribe.schema.version
+    stability: stable
     type: string
     brief: Version of the Tracescribe conventions the emitter follows.
-    examples: ["0.2.0"]
+    examples: ["0.4.0"]
 
   # ---- Intent -------------------------------------------------------------
   - id: tracescribe.intent
+    stability: stable
     type: string
     brief: Stable, dot-separated name of the business operation.
-    note: Low cardinality. Must not contain identifiers; use tracescribe.context.* for IDs. Also set on log records emitted inside an intent span.
+    note: >-
+      Low cardinality. Lower-case segments of [a-z0-9_] separated by dots, usually <domain>.<entity>.<action>.
+      Must not contain identifiers; use tracescribe.context.* for IDs. Also set on log records emitted inside an
+      intent span.
     examples: ["claim.fnol.submit", "policy.quote.rate", "payment.refund.issue"]
 
   - id: tracescribe.intent.description
+    stability: stable
     type: string
     brief: One-sentence description of what the operation is trying to achieve.
 
   # ---- Outcome ------------------------------------------------------------
   - id: tracescribe.outcome.expected
+    stability: stable
     type: string
     brief: What a correct result looks like, stated before the work runs.
     examples: ["claim accepted with claim number"]
 
   - id: tracescribe.outcome.actual
+    stability: stable
     type: string
     brief: Short summary of what actually happened.
 
   - id: tracescribe.outcome.status
+    stability: stable
     type: enum
     brief: Business-level result, independent of span status.
     members:
@@ -50,14 +63,20 @@ attributes:
         brief: No outcome was recorded.
 
   - id: tracescribe.outcome.matched
+    stability: stable
     type: boolean
     brief: Whether the actual outcome satisfied the expected outcome.
     note: matched=false with span status OK identifies a semantic failure.
 
   # ---- Failure ------------------------------------------------------------
   - id: tracescribe.failure.class
+    stability: stable
     type: enum
     brief: Coarse failure category, chosen to route triage.
+    note: >-
+      Closed set. A minor version may add sub-values of the form <class>.<detail>, like dependency.timeout.
+      Consumers must treat a value they don't recognise by its first segment (dependency.rate_limited is a
+      dependency failure), and a first segment they don't recognise as unknown.
     members:
       - value: dependency
         brief: A downstream service, database or queue failed.
@@ -79,33 +98,40 @@ attributes:
         brief: Unclassified.
 
   - id: tracescribe.failure.reason
+    stability: stable
     type: string
     brief: One-line, PII-free explanation of the failure.
 
   - id: tracescribe.failure.retryable
+    stability: stable
     type: boolean
     brief: Whether retrying the same request could plausibly succeed.
 
   - id: tracescribe.failure.inferred
+    stability: stable
     type: boolean
     brief: True when failure.class was inferred by the SDK rather than set by the application.
 
   # ---- Context and redaction ----------------------------------------------
   - id: tracescribe.context
+    stability: stable
     type: template[string]
     brief: Business identifiers that let an agent pivot to other data, e.g. tracescribe.context.claim_id.
     note: Values pass through the redaction policy before export.
 
   - id: tracescribe.redacted
+    stability: stable
     type: boolean
     brief: True when one or more values on this span or log record were redacted.
 
   - id: tracescribe.redacted.keys
+    stability: stable
     type: string[]
     brief: Attribute keys whose values were redacted.
 
   # ---- Links --------------------------------------------------------------
   - id: tracescribe.link.reason
+    stability: stable
     type: enum
     brief: Why a span links to another span. Set on span links.
     members:
@@ -120,43 +146,54 @@ attributes:
 
   # ---- GenAI chat outcomes ------------------------------------------------
   - id: tracescribe.chat.finish_reason
+    stability: development
+    note: Development because the GenAI conventions it complements are not yet stable in OpenTelemetry.
     type: string
     brief: Finish reason reported by the model for a chat call, e.g. stop, length, tool_calls, content_filter.
 
 events:
   - name: tracescribe.decision
+    stability: stable
     brief: A branch the code took that changes downstream behavior.
     attributes:
       - id: tracescribe.decision.name
+        stability: stable
         type: string
         brief: Stable name of the decision point.
         examples: ["vin.fallback"]
       - id: tracescribe.decision.chosen
+        stability: stable
         type: string
         brief: The option taken.
       - id: tracescribe.decision.alternatives
+        stability: stable
         type: string[]
         brief: Options that were available but not taken.
       - id: tracescribe.decision.rationale
+        stability: stable
         type: string
         brief: Why the option was taken.
 
   - name: tracescribe.hint
+    stability: stable
     brief: Author-supplied pointer for whoever triages this span later.
     attributes:
       - id: tracescribe.hint.text
+        stability: stable
         type: string
         brief: The hint.
         examples: ["If this fails in CA only, check flag rating.ca.v2"]
 
 metrics:
   - name: tracescribe.operation.count
+    stability: stable
     instrument: counter
     unit: "{operation}"
     brief: Number of completed intent operations.
     attributes: [tracescribe.intent, tracescribe.outcome.status, tracescribe.failure.class]
 
   - name: tracescribe.operation.duration
+    stability: stable
     instrument: histogram
     unit: s
     brief: Duration of completed intent operations.

@@ -1,6 +1,7 @@
-# Tracescribe Semantic Conventions v0.2.0
+# Tracescribe Semantic Conventions v0.4.0
 
-**Status:** Development. Names and semantics may change before 1.0.
+**Status:** Release candidate for 1.0. Every attribute, event and metric is marked *stable* or *development*
+(section 10); the stable set is what 1.0 will freeze.
 Machine-readable registry: [`attributes.yaml`](attributes.yaml). SDK constants are generated from it
 (`python3 spec/tools/generate_dotnet.py`), and CI fails if they drift.
 
@@ -40,6 +41,12 @@ it never replaces or renames an existing OTel attribute.
 | `tracescribe.intent` | string | Recommended on any span that represents a business operation | Stable dotted name, e.g. `claim.fnol.submit`. |
 | `tracescribe.intent.description` | string | Opt-in | One-sentence description. |
 
+**Naming.** An intent is a lower-case, dot-separated name, each segment matching `[a-z0-9_]+`, usually
+`<domain>.<entity>.<action>`: `claim.fnol.submit`, `policy.quote.rate`, `payment.refund.issue`.
+It names *what kind* of operation runs, never *which* one, so it stays low-cardinality and safe as a metric
+dimension. Identifiers belong in `tracescribe.context.*`. Renaming an intent breaks every query and alert
+built on it, so treat intents like API names.
+
 ### 3.2 Outcome
 
 | Attribute | Type | Description |
@@ -68,6 +75,12 @@ If an intent span ends without an outcome, SDKs set
 `failure.class` values: `dependency`, `dependency.timeout`, `data`,
 `validation`, `policy`, `semantic`, `configuration`, `internal`, `unknown`.
 
+**Extending.** The set is closed: applications put detail in `tracescribe.failure.reason`, not in new
+classes. A future minor version MAY add sub-values of the form `<class>.<detail>`, as `dependency.timeout`
+refines `dependency`. Consumers MUST treat a value they don't recognise by its first segment
+(`dependency.rate_limited` is a `dependency` failure, `semantic.x` is a semantic failure) and a first segment
+they don't recognise as `unknown`. This keeps older tools correct when the set grows.
+
 **Inference.** When a span ends with error status and no class, SDKs MAY
 infer one from the exception type (for example a timeout exception maps to
 `dependency.timeout`, and a failing `execute_tool` span maps to
@@ -90,6 +103,9 @@ infer one from the exception type (for example a timeout exception maps to
 | Attribute | Type | Description |
 |---|---|---|
 | `tracescribe.chat.finish_reason` | string | The model's finish reason on an intent span wrapping a chat call (`stop`, `length`, `tool_calls`, `content_filter`). |
+
+*Development:* this attribute complements the OpenTelemetry GenAI conventions, which are not yet stable
+upstream, so it may change in a minor version.
 
 SDK middleware for chat clients SHOULD map finish reasons to outcomes:
 
@@ -164,10 +180,39 @@ followed by a ranked list of root-cause candidates (deepest failing spans
 first, then semantic failures). This keeps a 200-span trace within a few
 hundred tokens.
 
-## 10. Versioning
+The digest is written for language models, not parsers. Its layout and wording are **not** covered by the
+stability guarantees in section 10 and may change in any release.
 
-Emitters set `tracescribe.schema.version` on intent spans. Breaking changes
-bump the minor version while in Development, and the major version after 1.0.
+## 10. Versioning and stability
+
+Emitters set `tracescribe.schema.version` (semver) on intent spans, so consumers can tell which rules a span
+follows.
+
+Each attribute, event and metric in [`attributes.yaml`](attributes.yaml) has a stability:
+
+| Stability | Guarantee |
+|---|---|
+| `stable` | Never renamed, removed, retyped or given a different meaning without a new **major** version. |
+| `development` | May change in a **minor** version. Used where Tracescribe depends on conventions that are not stable upstream. |
+
+From 1.0:
+
+- **Major** versions are the only place stable items can break.
+- **Minor** versions may add attributes, events, metrics, enum sub-values (section 3.3) and `development` items,
+  and may promote `development` items to `stable`.
+- **Patch** versions only clarify wording.
+- `gen_ai.*`, `http.*`, `exception.*` and other OpenTelemetry names follow OpenTelemetry's own stability;
+  Tracescribe never redefines them.
+
+Before 1.0, breaking changes bump the minor version.
+
+### Changes in 0.4.0
+
+- Added a stability to every attribute, event and metric. All are `stable` except
+  `tracescribe.chat.finish_reason` (`development`).
+- Added intent naming rules (3.1), `failure.class` extension rules (3.3) and the versioning rules above.
+- The triage digest format is explicitly outside the stability guarantees (9).
+- No attribute was renamed or removed.
 
 ### Changes in 0.2.0
 

@@ -131,3 +131,20 @@ public class TriageDigestTests
         Assert.Contains("(parent not captured)", text);
     }
 }
+
+public class FailureClassSubValueTests
+{
+    private static SpanRecord Span(string? failureClass) => new(
+        "5b8efff798038103d269b633813fc60c", "eee19b7ec3c1b174", null, "op", "test", System.Diagnostics.ActivityKind.Internal,
+        DateTimeOffset.UnixEpoch, TimeSpan.Zero, System.Diagnostics.ActivityStatusCode.Unset, null,
+        new Dictionary<string, object?> { [Tracescribe.SemanticConventions.TracescribeAttributes.FailureClass] = failureClass },
+        [], []);
+
+    [Theory]
+    [InlineData("semantic", SpanHealth.Semantic)]
+    [InlineData("semantic.coverage_mismatch", SpanHealth.Semantic)] // sub-values count as their first segment (spec 3.3)
+    [InlineData("semanticx", SpanHealth.Ok)]
+    [InlineData(null, SpanHealth.Ok)]
+    public void Semantic_sub_values_are_semantic(string? failureClass, SpanHealth expected) =>
+        Assert.Equal(expected, TriageDigest.HealthOf(Span(failureClass)));
+}

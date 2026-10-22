@@ -121,7 +121,7 @@ public class AzureMonitorTests
         Assert.Equal("""
             union AppRequests, AppDependencies
             | where AppRoleName == "claims-api"
-            | where Success == false or tostring(Properties["tracescribe.outcome.matched"]) =~ "false" or tostring(Properties["tracescribe.failure.class"]) == "semantic"
+            | where Success == false or tostring(Properties["tracescribe.outcome.matched"]) =~ "false" or tostring(Properties["tracescribe.failure.class"]) == "semantic" or tostring(Properties["tracescribe.failure.class"]) startswith_cs "semantic."
             | summarize Start = min(TimeGenerated) by OperationId
             | top 10 by Start desc
             """.ReplaceLineEndings("\n"), AzureMonitorBackend.SearchKql(new TraceQuery("claims-api")));

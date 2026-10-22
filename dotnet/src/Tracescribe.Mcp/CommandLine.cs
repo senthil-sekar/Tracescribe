@@ -5,7 +5,7 @@ using Tracescribe.Query;
 namespace Tracescribe.Mcp;
 
 /// <summary>Minimal command-line parser for the CLI mode.</summary>
-public sealed class CommandLine
+internal sealed class CommandLine
 {
     /// <summary>Usage text.</summary>
     public const string Usage = """

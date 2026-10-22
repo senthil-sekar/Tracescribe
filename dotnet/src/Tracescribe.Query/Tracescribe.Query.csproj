@@ -1,8 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <Description>Read traces from Jaeger, Grafana Tempo or OTLP/JSON files and turn them into Tracescribe triage digests. No dependencies beyond the BCL.</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Tracescribe\Tracescribe.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tracescribe.Tests" />
   </ItemGroup>
 </Project>

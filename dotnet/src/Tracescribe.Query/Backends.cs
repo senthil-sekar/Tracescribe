@@ -6,38 +6,44 @@ using Tracescribe.SemanticConventions;
 
 namespace Tracescribe.Query;
 
-/// <summary>Shared HTTP plumbing for trace and log backends.</summary>
-public abstract class HttpBackend
+/// <summary>HTTP plumbing shared by the backends: base URL handling, error mapping and an optional per-request auth hook.</summary>
+internal sealed class HttpQueryClient
 {
-    /// <summary>Creates the backend.</summary>
+    private readonly HttpClient _http;
+    private readonly string _name;
+    private readonly Func<HttpRequestMessage, CancellationToken, ValueTask>? _authorize;
+
+    /// <summary>Creates the client.</summary>
     /// <param name="http">Client to use; configure auth headers and timeouts on it.</param>
     /// <param name="baseUrl">Base URL of the query API, e.g. <c>http://localhost:16686</c>.</param>
-    protected HttpBackend(HttpClient http, Uri baseUrl)
+    /// <param name="name">Backend name for error messages.</param>
+    /// <param name="authorize">Adds per-request credentials, such as a fresh bearer token.</param>
+    public HttpQueryClient(HttpClient http, Uri baseUrl, string name, Func<HttpRequestMessage, CancellationToken, ValueTask>? authorize = null)
     {
-        Http = http ?? throw new ArgumentNullException(nameof(http));
+        _http = http ?? throw new ArgumentNullException(nameof(http));
         ArgumentNullException.ThrowIfNull(baseUrl);
         BaseUrl = baseUrl.AbsoluteUri.EndsWith('/') ? baseUrl : new Uri(baseUrl.AbsoluteUri + "/");
+        _name = name;
+        _authorize = authorize;
     }
 
-    /// <summary>The HTTP client.</summary>
-    protected HttpClient Http { get; }
-
     /// <summary>Base URL, always ending in a slash.</summary>
-    protected Uri BaseUrl { get; }
-
-    /// <summary>Short name for messages, e.g. <c>jaeger</c>.</summary>
-    public abstract string Name { get; }
-
-    /// <summary>Hook to add per-request credentials, such as a fresh bearer token. Does nothing by default.</summary>
-    protected virtual ValueTask AuthorizeAsync(HttpRequestMessage request, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    public Uri BaseUrl { get; }
 
     /// <summary>GETs a relative path. Returns <c>null</c> on 404; throws <see cref="TraceBackendException"/> on other failures.</summary>
-    protected Task<string?> GetAsync(string relative, CancellationToken cancellationToken) =>
+    public Task<string?> GetAsync(string relative, CancellationToken cancellationToken) =>
         SendAsync(HttpMethod.Get, relative, null, cancellationToken);
 
     /// <summary>POSTs a JSON body to a relative path. Returns <c>null</c> on 404; throws <see cref="TraceBackendException"/> on other failures.</summary>
-    protected Task<string?> PostJsonAsync(string relative, string json, CancellationToken cancellationToken) =>
+    public Task<string?> PostJsonAsync(string relative, string json, CancellationToken cancellationToken) =>
         SendAsync(HttpMethod.Post, relative, json, cancellationToken);
+
+    /// <summary>Resolves a search window ending now; one hour when no lookback is given.</summary>
+    public static (DateTimeOffset Start, DateTimeOffset End) Window(TimeSpan? lookback)
+    {
+        var end = DateTimeOffset.UtcNow;
+        return (end - (lookback ?? TimeSpan.FromHours(1)), end);
+    }
 
     private async Task<string?> SendAsync(HttpMethod method, string relative, string? json, CancellationToken cancellationToken)
     {
@@ -52,12 +58,16 @@ public abstract class HttpBackend
                 request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
             }
 
-            await AuthorizeAsync(request, cancellationToken).ConfigureAwait(false);
-            response = await Http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (_authorize is not null)
+            {
+                await _authorize(request, cancellationToken).ConfigureAwait(false);
+            }
+
+            response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
-            throw new TraceBackendException($"{Name}: cannot reach {uri.GetLeftPart(UriPartial.Authority)}: {ex.Message}", ex);
+            throw new TraceBackendException($"{_name}: cannot reach {uri.GetLeftPart(UriPartial.Authority)}: {ex.Message}", ex);
         }
 
         using (response)
@@ -71,64 +81,34 @@ public abstract class HttpBackend
             if (!response.IsSuccessStatusCode)
             {
                 var snippet = body.Length > 300 ? body[..300] : body;
-                throw new TraceBackendException($"{Name}: {(int)response.StatusCode} {response.ReasonPhrase} from {uri.AbsolutePath}: {snippet}");
+                throw new TraceBackendException($"{_name}: {(int)response.StatusCode} {response.ReasonPhrase} from {uri.AbsolutePath}: {snippet}");
             }
 
             return body;
         }
     }
-
-    /// <summary>Resolves a search window ending now; one hour when no lookback is given.</summary>
-    protected static (DateTimeOffset Start, DateTimeOffset End) Window(TimeSpan? lookback)
-    {
-        var end = DateTimeOffset.UtcNow;
-        return (end - (lookback ?? TimeSpan.FromHours(1)), end);
-    }
-
-    /// <summary>Resolves the search window of a trace query.</summary>
-    protected static (DateTimeOffset Start, DateTimeOffset End) Window(TraceQuery query) => Window(query?.Lookback);
-}
-
-/// <summary>Base class for trace backends that speak HTTP.</summary>
-public abstract class HttpTraceBackend : HttpBackend, ITraceBackend
-{
-    /// <summary>Creates the backend.</summary>
-    /// <param name="http">Client to use; configure auth headers and timeouts on it.</param>
-    /// <param name="baseUrl">Base URL of the query API, e.g. <c>http://localhost:16686</c>.</param>
-    protected HttpTraceBackend(HttpClient http, Uri baseUrl) : base(http, baseUrl)
-    {
-    }
-
-    /// <inheritdoc />
-    public abstract Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default);
-
-    /// <inheritdoc />
-    public abstract Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default);
-
-    /// <inheritdoc />
-    public abstract Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Jaeger query API (<c>/api/traces</c>, <c>/api/services</c>), default port 16686.</summary>
-public sealed class JaegerBackend : HttpTraceBackend
+public sealed class JaegerBackend : ITraceBackend
 {
+    private readonly HttpQueryClient _client;
+
     /// <summary>Creates the backend.</summary>
-    public JaegerBackend(HttpClient http, Uri baseUrl) : base(http, baseUrl)
-    {
-    }
+    public JaegerBackend(HttpClient http, Uri baseUrl) => _client = new HttpQueryClient(http, baseUrl, "jaeger");
 
     /// <inheritdoc />
-    public override string Name => "jaeger";
+    public string Name => "jaeger";
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default)
     {
-        var body = await GetAsync("api/traces/" + Uri.EscapeDataString(traceId), cancellationToken).ConfigureAwait(false);
+        var body = await _client.GetAsync("api/traces/" + Uri.EscapeDataString(traceId), cancellationToken).ConfigureAwait(false);
         return body is null ? [] : JaegerJsonReader.Read(body);
     }
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default)
     {
         // Jaeger search requires a service, so search each service when none is given.
         var services = query.Service is { } s ? [s] : (await ListServicesAsync(cancellationToken).ConfigureAwait(false)).Take(25).ToList();
@@ -139,7 +119,7 @@ public sealed class JaegerBackend : HttpTraceBackend
             _ => new[] { """{"error":"true"}""", $$"""{"{{TracescribeAttributes.OutcomeMatched}}":"false"}""" },
         };
 
-        var (start, end) = Window(query);
+        var (start, end) = HttpQueryClient.Window(query.Lookback);
         var found = new Dictionary<string, (DateTimeOffset Start, List<SpanRecord> Spans)>(StringComparer.Ordinal);
         foreach (var service in services)
         {
@@ -147,7 +127,7 @@ public sealed class JaegerBackend : HttpTraceBackend
             {
                 var path = string.Create(CultureInfo.InvariantCulture,
                     $"api/traces?service={Uri.EscapeDataString(service)}&tags={Uri.EscapeDataString(tags)}&start={start.ToUnixTimeMilliseconds() * 1000}&end={end.ToUnixTimeMilliseconds() * 1000}&limit={query.Limit}");
-                var body = await GetAsync(path, cancellationToken).ConfigureAwait(false);
+                var body = await _client.GetAsync(path, cancellationToken).ConfigureAwait(false);
                 if (body is null)
                 {
                     continue;
@@ -168,9 +148,9 @@ public sealed class JaegerBackend : HttpTraceBackend
     }
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default)
     {
-        var body = await GetAsync("api/services", cancellationToken).ConfigureAwait(false);
+        var body = await _client.GetAsync("api/services", cancellationToken).ConfigureAwait(false);
         if (body is null)
         {
             return [];
@@ -184,25 +164,25 @@ public sealed class JaegerBackend : HttpTraceBackend
 }
 
 /// <summary>Grafana Tempo HTTP API (<c>/api/traces</c>, TraceQL <c>/api/search</c>), default port 3200.</summary>
-public sealed class TempoBackend : HttpTraceBackend
+public sealed class TempoBackend : ITraceBackend
 {
+    private readonly HttpQueryClient _client;
+
     /// <summary>Creates the backend.</summary>
-    public TempoBackend(HttpClient http, Uri baseUrl) : base(http, baseUrl)
-    {
-    }
+    public TempoBackend(HttpClient http, Uri baseUrl) => _client = new HttpQueryClient(http, baseUrl, "tempo");
 
     /// <inheritdoc />
-    public override string Name => "tempo";
+    public string Name => "tempo";
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default)
     {
-        var body = await GetAsync("api/traces/" + Uri.EscapeDataString(traceId), cancellationToken).ConfigureAwait(false);
+        var body = await _client.GetAsync("api/traces/" + Uri.EscapeDataString(traceId), cancellationToken).ConfigureAwait(false);
         return body is null ? [] : OtlpJsonReader.Read(body);
     }
 
-    /// <summary>Builds the TraceQL query used for a search. Public for transparency and testing.</summary>
-    public static string TraceQl(TraceQuery query)
+    /// <summary>Builds the TraceQL query used for a search.</summary>
+    internal static string TraceQl(TraceQuery query)
     {
         var failure = query.Kind switch
         {
@@ -216,12 +196,12 @@ public sealed class TempoBackend : HttpTraceBackend
     }
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default)
     {
-        var (start, end) = Window(query);
+        var (start, end) = HttpQueryClient.Window(query.Lookback);
         var path = string.Create(CultureInfo.InvariantCulture,
             $"api/search?q={Uri.EscapeDataString(TraceQl(query))}&start={start.ToUnixTimeSeconds()}&end={end.ToUnixTimeSeconds()}&limit={query.Limit}");
-        var body = await GetAsync(path, cancellationToken).ConfigureAwait(false);
+        var body = await _client.GetAsync(path, cancellationToken).ConfigureAwait(false);
         if (body is null)
         {
             return [];
@@ -242,9 +222,9 @@ public sealed class TempoBackend : HttpTraceBackend
     }
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default)
     {
-        var body = await GetAsync("api/search/tag/service.name/values", cancellationToken).ConfigureAwait(false);
+        var body = await _client.GetAsync("api/search/tag/service.name/values", cancellationToken).ConfigureAwait(false);
         if (body is null)
         {
             return [];

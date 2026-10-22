@@ -43,7 +43,7 @@ public static class FailureClassifier
 
     /// <summary>
     /// Classifies a live exception. Looks, in order, at HTTP-style status codes the exception exposes
-    /// (<see cref="System.Net.Http.HttpRequestException.StatusCode"/>, or a <c>Status</c>/<c>StatusCode</c>
+    /// (<c>HttpRequestException.StatusCode</c> on .NET 5+, or a <c>Status</c>/<c>StatusCode</c>
     /// property as on Azure and OpenAI SDK exceptions), then at the exception's type and base types,
     /// then at inner exceptions.
     /// </summary>
@@ -116,7 +116,7 @@ public static class FailureClassifier
     /// <summary>Classifies from a full or short exception type name.</summary>
     public static FailureClassification? FromExceptionType(string? exceptionType)
     {
-        if (string.IsNullOrWhiteSpace(exceptionType))
+        if (exceptionType is null || string.IsNullOrWhiteSpace(exceptionType))
         {
             return null;
         }
