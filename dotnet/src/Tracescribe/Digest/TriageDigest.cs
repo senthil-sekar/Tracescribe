@@ -95,10 +95,37 @@ public static class TriageDigest
     {
         var o = options ?? new TriageDigestOptions();
         return spans
+            .Select(Sanitize)
             .GroupBy(s => s.TraceId)
             .OrderBy(g => g.Min(s => s.StartTime))
             .Select(g => BuildTrace(g.Key, g.ToList(), o))
             .ToList();
+    }
+
+    /// <summary>Copies a span with every name and string value reduced to one safe line (see <see cref="TextSafety"/>).</summary>
+    private static SpanRecord Sanitize(SpanRecord span) => span with
+    {
+        Name = TextSafety.OneLine(span.Name),
+        Service = span.Service is null ? null : TextSafety.OneLine(span.Service),
+        StatusDescription = span.StatusDescription is null ? null : TextSafety.OneLine(span.StatusDescription),
+        Attributes = SanitizeAll(span.Attributes),
+        Events = span.Events.Select(e => e with { Name = TextSafety.OneLine(e.Name), Attributes = SanitizeAll(e.Attributes) }).ToList(),
+    };
+
+    private static Dictionary<string, object?> SanitizeAll(IReadOnlyDictionary<string, object?> attributes)
+    {
+        var d = new Dictionary<string, object?>(attributes.Count, StringComparer.Ordinal);
+        foreach (var kv in attributes)
+        {
+            d[TextSafety.OneLine(kv.Key)] = kv.Value switch
+            {
+                string text => TextSafety.OneLine(text),
+                string[] items => items.Select(TextSafety.OneLine).ToArray(),
+                _ => kv.Value,
+            };
+        }
+
+        return d;
     }
 
     /// <summary>Renders all traces in <paramref name="spans"/> as one text block.</summary>
@@ -505,7 +532,7 @@ public static class TriageDigest
             return null;
         }
 
-        var single = (o.Redactor is null ? value : o.Redactor.Redact("text", value, out _)).ReplaceLineEndings(" ");
+        var single = TextSafety.OneLine(o.Redactor is null ? value : o.Redactor.Redact("text", value, out _));
         return single.Length <= o.MaxValueLength ? single : single.Substring(0, o.MaxValueLength) + "…";
     }
 

@@ -18,6 +18,14 @@ public static class JaegerJsonReader
         "otel.scope.version", "otel.library.version", "internal.span.format",
     };
 
+    // Jaeger has no array type: it stores array attributes as a JSON string such as ["a","b"]. Restore the
+    // arrays the conventions define; other strings are left alone, since one may legitimately start with '['.
+    private static readonly HashSet<string> ArrayTags = new(StringComparer.Ordinal)
+    {
+        Tracescribe.SemanticConventions.TracescribeEvents.DecisionAlternatives,
+        Tracescribe.SemanticConventions.TracescribeAttributes.RedactedKeys,
+    };
+
     /// <summary>Reads every span of every trace in a Jaeger API response.</summary>
     public static IReadOnlyList<SpanRecord> Read(string json)
     {
@@ -162,6 +170,7 @@ public static class JaegerJsonReader
 
             d[key] = v.ValueKind switch
             {
+                JsonValueKind.String when ArrayTags.Contains(key) => StringArray(v.GetString()),
                 JsonValueKind.String => v.GetString(),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
@@ -172,6 +181,26 @@ public static class JaegerJsonReader
         }
 
         return d;
+    }
+
+    private static object? StringArray(string? json)
+    {
+        if (json is not { Length: > 1 } || json[0] != '[')
+        {
+            return json;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Array
+                ? doc.RootElement.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() ?? string.Empty : e.GetRawText()).ToArray()
+                : json;
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
     }
 
     private static string? Str(JsonElement obj, string name) =>

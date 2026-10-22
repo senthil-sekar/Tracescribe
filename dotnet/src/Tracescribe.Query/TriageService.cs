@@ -145,10 +145,10 @@ public sealed class TriageService
         {
             sb.Append("- ").Append(s.TraceId)
               .Append(" | ").Append(s.Start.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss'Z'", CultureInfo.InvariantCulture))
-              .Append(" | ").Append(s.Root);
+              .Append(" | ").Append(TextSafety.OneLine(s.Root));
             if (s.RootService is not null)
             {
-                sb.Append(" (").Append(s.RootService).Append(')');
+                sb.Append(" (").Append(TextSafety.OneLine(s.RootService)).Append(')');
             }
 
             sb.Append(" | ").Append(s.FailedCount).Append(" failed, ").Append(s.SemanticCount).Append(" semantic");
@@ -179,7 +179,7 @@ public sealed class TriageService
         try
         {
             var services = await _backend.ListServicesAsync(cancellationToken).ConfigureAwait(false);
-            return services.Count == 0 ? $"No services found in {_backend.Name}." : string.Join(Environment.NewLine, services);
+            return services.Count == 0 ? $"No services found in {_backend.Name}." : string.Join(Environment.NewLine, services.Select(TextSafety.OneLine));
         }
         catch (TraceBackendException ex)
         {
@@ -250,22 +250,22 @@ public sealed class TriageService
               .Append(' ').Append(log.Severity == LogSeverity.Unspecified ? "-" : log.Severity.ToString().ToUpperInvariant());
             if (log.Service is not null && query.Service is null)
             {
-                sb.Append(' ').Append(log.Service);
+                sb.Append(' ').Append(TextSafety.OneLine(log.Service));
             }
 
             if (log.Intent is { } intent && (query.Intent is null || query.IntentIsPrefix))
             {
-                sb.Append(" [").Append(intent).Append(']');
+                sb.Append(" [").Append(TextSafety.OneLine(intent)).Append(']');
             }
 
             if (log.TraceId is not null && query.TraceId is null)
             {
-                sb.Append(" trace=").Append(log.TraceId);
+                sb.Append(" trace=").Append(TextSafety.OneLine(log.TraceId));
             }
 
             if (log.SpanId is not null)
             {
-                sb.Append(" span=").Append(log.SpanId);
+                sb.Append(" span=").Append(TextSafety.OneLine(log.SpanId));
             }
 
             sb.Append("  ").Append(Clean("body", log.Body));
@@ -276,7 +276,7 @@ public sealed class TriageService
                     var key = kv.Key.StartsWith(TracescribeAttributes.ContextPrefix, StringComparison.Ordinal)
                         ? kv.Key[TracescribeAttributes.ContextPrefix.Length..]
                         : kv.Key;
-                    return key + "=" + Clean(key, SpanRecord.Format(kv.Value) ?? string.Empty);
+                    return TextSafety.OneLine(key) + "=" + Clean(key, SpanRecord.Format(kv.Value) ?? string.Empty);
                 })
                 .ToList();
             if (attributes.Count > 0)
@@ -298,7 +298,7 @@ public sealed class TriageService
     private string Clean(string key, string value)
     {
         var safe = _digestOptions.Redactor is { } redactor ? redactor.Redact(key, value, out _) : value;
-        safe = safe.ReplaceLineEndings(" ");
+        safe = TextSafety.OneLine(safe);
         return safe.Length > _digestOptions.MaxValueLength ? safe[.._digestOptions.MaxValueLength] + "…" : safe;
     }
 
