@@ -6,15 +6,16 @@ using Tracescribe.SemanticConventions;
 
 namespace Tracescribe.Query;
 
-/// <summary>Shared HTTP plumbing for backends.</summary>
-public abstract class HttpTraceBackend : ITraceBackend
+/// <summary>Shared HTTP plumbing for trace and log backends.</summary>
+public abstract class HttpBackend
 {
     /// <summary>Creates the backend.</summary>
     /// <param name="http">Client to use; configure auth headers and timeouts on it.</param>
     /// <param name="baseUrl">Base URL of the query API, e.g. <c>http://localhost:16686</c>.</param>
-    protected HttpTraceBackend(HttpClient http, Uri baseUrl)
+    protected HttpBackend(HttpClient http, Uri baseUrl)
     {
         Http = http ?? throw new ArgumentNullException(nameof(http));
+        ArgumentNullException.ThrowIfNull(baseUrl);
         BaseUrl = baseUrl.AbsoluteUri.EndsWith('/') ? baseUrl : new Uri(baseUrl.AbsoluteUri + "/");
     }
 
@@ -24,27 +25,34 @@ public abstract class HttpTraceBackend : ITraceBackend
     /// <summary>Base URL, always ending in a slash.</summary>
     protected Uri BaseUrl { get; }
 
-    /// <inheritdoc />
+    /// <summary>Short name for messages, e.g. <c>jaeger</c>.</summary>
     public abstract string Name { get; }
 
-    /// <inheritdoc />
-    public abstract Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default);
-
-    /// <inheritdoc />
-    public abstract Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default);
-
-    /// <inheritdoc />
-    public abstract Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default);
+    /// <summary>Hook to add per-request credentials, such as a fresh bearer token. Does nothing by default.</summary>
+    protected virtual ValueTask AuthorizeAsync(HttpRequestMessage request, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 
     /// <summary>GETs a relative path. Returns <c>null</c> on 404; throws <see cref="TraceBackendException"/> on other failures.</summary>
-    protected async Task<string?> GetAsync(string relative, CancellationToken cancellationToken)
+    protected Task<string?> GetAsync(string relative, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Get, relative, null, cancellationToken);
+
+    /// <summary>POSTs a JSON body to a relative path. Returns <c>null</c> on 404; throws <see cref="TraceBackendException"/> on other failures.</summary>
+    protected Task<string?> PostJsonAsync(string relative, string json, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Post, relative, json, cancellationToken);
+
+    private async Task<string?> SendAsync(HttpMethod method, string relative, string? json, CancellationToken cancellationToken)
     {
         var uri = new Uri(BaseUrl, relative);
         HttpResponseMessage response;
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            using var request = new HttpRequestMessage(method, uri);
             request.Headers.Accept.ParseAdd("application/json");
+            if (json is not null)
+            {
+                request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            }
+
+            await AuthorizeAsync(request, cancellationToken).ConfigureAwait(false);
             response = await Http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
@@ -70,12 +78,35 @@ public abstract class HttpTraceBackend : ITraceBackend
         }
     }
 
-    /// <summary>Resolves the search window.</summary>
-    protected static (DateTimeOffset Start, DateTimeOffset End) Window(TraceQuery query)
+    /// <summary>Resolves a search window ending now; one hour when no lookback is given.</summary>
+    protected static (DateTimeOffset Start, DateTimeOffset End) Window(TimeSpan? lookback)
     {
         var end = DateTimeOffset.UtcNow;
-        return (end - (query.Lookback ?? TimeSpan.FromHours(1)), end);
+        return (end - (lookback ?? TimeSpan.FromHours(1)), end);
     }
+
+    /// <summary>Resolves the search window of a trace query.</summary>
+    protected static (DateTimeOffset Start, DateTimeOffset End) Window(TraceQuery query) => Window(query?.Lookback);
+}
+
+/// <summary>Base class for trace backends that speak HTTP.</summary>
+public abstract class HttpTraceBackend : HttpBackend, ITraceBackend
+{
+    /// <summary>Creates the backend.</summary>
+    /// <param name="http">Client to use; configure auth headers and timeouts on it.</param>
+    /// <param name="baseUrl">Base URL of the query API, e.g. <c>http://localhost:16686</c>.</param>
+    protected HttpTraceBackend(HttpClient http, Uri baseUrl) : base(http, baseUrl)
+    {
+    }
+
+    /// <inheritdoc />
+    public abstract Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default);
+
+    /// <inheritdoc />
+    public abstract Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default);
+
+    /// <inheritdoc />
+    public abstract Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Jaeger query API (<c>/api/traces</c>, <c>/api/services</c>), default port 16686.</summary>
@@ -229,9 +260,10 @@ public sealed class TempoBackend : HttpTraceBackend
 
 /// <summary>
 /// Traces exported to files: OTLP/JSON (Collector file exporter, one request per line) or Jaeger JSON.
-/// Point it at a file or a directory of <c>.json</c>/<c>.jsonl</c> files.
+/// Point it at a file or a directory of <c>.json</c>/<c>.jsonl</c> files. OTLP/JSON logs in the same place are
+/// served by <see cref="SearchLogsAsync"/>.
 /// </summary>
-public sealed class FileTraceBackend : ITraceBackend
+public sealed class FileTraceBackend : ITraceBackend, ILogBackend
 {
     private readonly string _path;
 
@@ -253,12 +285,26 @@ public sealed class FileTraceBackend : ITraceBackend
         return otlp || !text.Contains("\"traceID\"", StringComparison.Ordinal) ? OtlpJsonReader.Read(text) : JaegerJsonReader.Read(text);
     }
 
-    private IReadOnlyList<SpanRecord> LoadAll()
+    private IEnumerable<string> Files() => Directory.Exists(_path)
+        ? Directory.EnumerateFiles(_path, "*.json*", SearchOption.AllDirectories)
+        : File.Exists(_path) ? [_path] : throw new TraceBackendException($"file: '{_path}' does not exist");
+
+    private IReadOnlyList<SpanRecord> LoadAll() => Files().SelectMany(f => ReadText(File.ReadAllText(f))).ToList();
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<LogEntry>> SearchLogsAsync(LogQuery query, CancellationToken cancellationToken = default)
     {
-        IEnumerable<string> files = Directory.Exists(_path)
-            ? Directory.EnumerateFiles(_path, "*.json*", SearchOption.AllDirectories)
-            : File.Exists(_path) ? [_path] : throw new TraceBackendException($"file: '{_path}' does not exist");
-        return files.SelectMany(f => ReadText(File.ReadAllText(f))).ToList();
+        ArgumentNullException.ThrowIfNull(query);
+        var since = query.Lookback is { } lb ? DateTimeOffset.UtcNow - lb : DateTimeOffset.MinValue;
+        var result = Files()
+            .Select(File.ReadAllText)
+            .Where(text => text.Contains("\"resourceLogs\"", StringComparison.Ordinal))
+            .SelectMany(OtlpJsonReader.ReadLogs)
+            .Where(l => l.Timestamp >= since && query.Matches(l))
+            .OrderByDescending(l => l.Timestamp)
+            .Take(query.Limit)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<LogEntry>>(result);
     }
 
     /// <inheritdoc />

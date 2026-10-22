@@ -1,0 +1,66 @@
+name: release
+
+# Publishes every package to nuget.org when a version tag is pushed: git tag v0.3.0-alpha && git push origin v0.3.0-alpha
+#
+# Uses NuGet trusted publishing (OIDC), so no long-lived API key is stored. One-time setup:
+#   1. nuget.org > your account > Trusted Publishing > add a policy:
+#        owner senthil-sekar, repository tracescribe, workflow file release.yml, environment nuget
+#   2. GitHub repo secret NUGET_USER = your nuget.org user name (profile name, not email).
+#   3. Optional: add protection rules (required reviewers) to the "nuget" environment in the repo settings.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write # trusted publishing
+    defaults:
+      run:
+        working-directory: dotnet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Version from tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not v<semver>"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - run: dotnet restore Tracescribe.sln
+      - run: dotnet build Tracescribe.sln -c Release --no-restore -p:Version=$VERSION
+      - run: dotnet test Tracescribe.sln -c Release --no-build
+      - run: dotnet pack Tracescribe.sln -c Release --no-build -p:Version=$VERSION -o ${{ runner.temp }}/packages
+
+      - name: Check the tool installs from the package
+        run: |
+          dotnet tool install Tracescribe.Mcp --version $VERSION --tool-path ${{ runner.temp }}/tool --add-source ${{ runner.temp }}/packages
+          ${{ runner.temp }}/tool/tracescribe-mcp help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ env.VERSION }}
+          path: ${{ runner.temp }}/packages
+
+      - name: NuGet login (short-lived API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      # Symbol packages (.snupkg) next to each .nupkg are pushed with it.
+      - name: Push to nuget.org
+        run: dotnet nuget push "${{ runner.temp }}/packages/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate

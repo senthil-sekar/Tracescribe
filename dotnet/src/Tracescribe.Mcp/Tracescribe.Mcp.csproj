@@ -1,12 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <Description>MCP server and CLI that give AI agents triage digests of traces from Jaeger, Grafana Tempo or OTLP/JSON files.</Description>
+    <Description>MCP server and CLI that give AI agents triage digests of traces and intent-keyed log search over Jaeger, Grafana Tempo and Loki, Azure Monitor / Application Insights, or OTLP/JSON files.</Description>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>tracescribe-mcp</ToolCommandName>
     <PackageId>Tracescribe.Mcp</PackageId>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
   </ItemGroup>

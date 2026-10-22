@@ -48,6 +48,11 @@ jobs:
       - name: Pack
         run: dotnet pack Tracescribe.sln -c Release --no-build -o ${{ runner.temp }}/packages
 
+      - name: Install the MCP tool from the package
+        run: |
+          dotnet tool install Tracescribe.Mcp --prerelease --tool-path ${{ runner.temp }}/tool --add-source ${{ runner.temp }}/packages
+          ${{ runner.temp }}/tool/tracescribe-mcp services --path ${{ runner.temp }}/claim-trace.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: packages

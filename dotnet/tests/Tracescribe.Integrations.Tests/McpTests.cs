@@ -1,4 +1,9 @@
+using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Trace;
 using Tracescribe.Digest;
+using Tracescribe.OpenTelemetry;
 using Tracescribe.Mcp;
 using Tracescribe.Query;
 using Xunit;
@@ -53,6 +58,72 @@ public class McpTests
         }
     }
 
+    private sealed class CaptureLogEntries : BaseProcessor<LogRecord>
+    {
+        public List<LogEntry> Entries { get; } = new();
+
+        public override void OnEnd(LogRecord data)
+        {
+            lock (Entries)
+            {
+                Entries.Add(data.ToLogEntry("claims-api"));
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Find_logs_by_intent_end_to_end()
+    {
+        // ILogger -> TracescribeLogProcessor (intent + redaction) -> OTLP/JSON file -> find_logs.
+        var capture = new CaptureLogEntries();
+        using var tracer = Sdk.CreateTracerProviderBuilder().AddTracescribe().Build();
+        using (var factory = LoggerFactory.Create(b => b.AddOpenTelemetry(o =>
+        {
+            o.IncludeFormattedMessage = true;
+            o.AddTracescribe();
+            o.AddProcessor(capture);
+        })))
+        {
+            var logger = factory.CreateLogger("claims");
+            using (var op = Scribe.Begin("claim.fnol.submit"))
+            {
+                logger.LogInformation("Claim received from {Reporter}", "jane.doe@example.com");
+                using (Scribe.Begin("coverage.check"))
+                {
+                    logger.LogWarning("Coverage evaluated against fallback VIN {Vin}", "1HGCM82633A004352");
+                }
+
+                op.Succeed();
+            }
+
+            logger.LogError("Unrelated failure outside any operation");
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), $"tracescribe-logs-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(path, OtlpJsonWriter.WriteLogs(capture.Entries));
+        try
+        {
+            var tools = new TriageTools(new TriageService(new FileTraceBackend(path)));
+
+            var submit = await tools.FindLogs(intent: "claim.fnol.submit");
+            Assert.StartsWith("1 log record for intent=claim.fnol.submit (file, oldest first):", submit);
+            Assert.Contains("INFO claims-api trace=", submit);
+            Assert.Contains("Claim received from [REDACTED:email] | Reporter=[REDACTED:email]", submit);
+            Assert.DoesNotContain("jane.doe", submit);
+
+            var all = await tools.FindLogs(service: "claims-api", minSeverity: "warn");
+            Assert.Contains("WARN [coverage.check]", all);
+            Assert.Contains("ERROR  Unrelated failure outside any operation", all);
+            Assert.DoesNotContain("Claim received", all);
+
+            Assert.StartsWith("Unknown severity", await tools.FindLogs(intent: "x", minSeverity: "loud"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public void Command_line_parses_commands_and_backend_flags()
     {
@@ -72,5 +143,18 @@ public class McpTests
         Assert.NotNull(CommandLine.Parse(["digest"]).Error);
         Assert.NotNull(CommandLine.Parse(["frobnicate"]).Error);
         Assert.NotNull(CommandLine.Parse(["failures", "--minutes"]).Error);
+
+        var logs = CommandLine.Parse(["logs", "--intent", "claim.*", "--trace", "abc", "--service", "claims-api", "--severity", "warn",
+            "--minutes", "30", "--limit", "20", "--backend", "tempo", "--logs-url", "http://loki:3100", "--logs-header", "X-Scope-OrgID: t1"]);
+        Assert.Null(logs.Error);
+        Assert.Equal(new LogQuery("claim.*", "abc", "claims-api", TimeSpan.FromMinutes(30), LogSeverity.Warn, 20), logs.LogQuery);
+        Assert.Equal("http://loki:3100", logs.Backend.LogsUrl);
+        Assert.Equal("X-Scope-OrgID: t1", logs.Backend.LogsHeader);
+        Assert.Equal(50, CommandLine.Parse(["logs", "--intent", "x"]).LogQuery.Limit);
+        Assert.NotNull(CommandLine.Parse(["logs", "--severity", "loud"]).Error);
+
+        var azure = CommandLine.Parse(["failures", "--workspace", "ws-1"]);
+        Assert.Equal("azuremonitor", azure.Backend.Kind);
+        Assert.Equal("ws-1", azure.Backend.Workspace);
     }
 }

@@ -8,6 +8,7 @@
     <IsPackable>true</IsPackable>
     <DevelopmentDependency>true</DevelopmentDependency>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <IncludeSymbols>false</IncludeSymbols>
     <NoWarn>$(NoWarn);RS2008;NU5128</NoWarn>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <Description>Source generator for Tracescribe: writes the body of [Scribe] partial methods so every call is a triage-ready span. Use with the Tracescribe package.</Description>

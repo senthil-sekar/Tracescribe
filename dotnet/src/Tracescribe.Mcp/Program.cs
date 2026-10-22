@@ -7,9 +7,9 @@ using Tracescribe.Query;
 // tracescribe-mcp                         run the MCP server on stdio (default)
 // tracescribe-mcp digest <trace-id>       print a digest
 // tracescribe-mcp failures [--service s] [--minutes n] [--kind any|error|semantic] [--limit n]
+// tracescribe-mcp logs [--intent i] [--trace id] [--service s] [--severity warn] [--minutes n] [--limit n]
 // tracescribe-mcp services
-// Backend options (or environment): --backend jaeger|tempo|file (TRACESCRIBE_BACKEND), --url (TRACESCRIBE_URL),
-//                                   --path (TRACESCRIBE_PATH), --header "Name: value" (TRACESCRIBE_HEADER)
+// Backend options (or environment): see CommandLine.Usage.
 
 var cli = CommandLine.Parse(args);
 if (cli.Error is { } parseError)
@@ -28,7 +28,13 @@ if (cli.Command == "help")
 TriageService triage;
 try
 {
-    triage = new TriageService(TraceBackendFactory.Create(cli.Backend));
+    if (cli.Backend.Kind.Equals("azuremonitor", StringComparison.OrdinalIgnoreCase) && cli.Backend.Header is null)
+    {
+        cli.Backend.AccessTokenProvider = new AzureTokenProvider().GetTokenAsync;
+    }
+
+    var traces = TraceBackendFactory.Create(cli.Backend);
+    triage = new TriageService(traces, logs: TraceBackendFactory.CreateLogs(cli.Backend, traces));
 }
 catch (ArgumentException ex)
 {
@@ -43,6 +49,9 @@ switch (cli.Command)
         return 0;
     case "failures":
         Console.WriteLine(await triage.FindFailuresTextAsync(cli.Query));
+        return 0;
+    case "logs":
+        Console.WriteLine(await triage.FindLogsTextAsync(cli.LogQuery));
         return 0;
     case "services":
         Console.WriteLine(await triage.ListServicesTextAsync());
