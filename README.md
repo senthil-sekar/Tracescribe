@@ -12,8 +12,9 @@ traces, logs and metrics faster. It ships an MCP server that hands agents a comp
 and the logs written inside any business operation, from Jaeger, Grafana Tempo and Loki, Azure Monitor /
 Application Insights, or OTLP/JSON files. .NET first.
 
-> Status: **v0.3 alpha, Development.** Attribute names may change before 1.0. Packages are on
-> [nuget.org](https://www.nuget.org/profiles/senthilsekar) as prereleases.
+> Status: **v0.4, heading to 1.0.** The conventions are marked stable or development
+> ([spec section 10](spec/SPEC.md#10-versioning-and-stability)) and the .NET API is checked for breaking changes
+> on every build. Packages are on [nuget.org](https://www.nuget.org/profiles/senthilsekar) as prereleases.
 
 ```bash
 dotnet add package Tracescribe.OpenTelemetry --prerelease   # or any package below
@@ -39,6 +40,9 @@ Everything is plain OTel attributes, events, links, log attributes and metrics, 
 OTLP backend. See [`spec/SPEC.md`](spec/SPEC.md).
 
 ## Packages
+
+Libraries that run inside your services target **.NET 8, .NET 10 and .NET Standard 2.0** (so .NET Framework
+4.6.2+ services can emit Tracescribe signals). `Tracescribe.Query` and the MCP tool target .NET 8 and .NET 10.
 
 | Package | Depends on | What it does |
 |---|---|---|
@@ -270,7 +274,7 @@ Try it locally:
 ```bash
 cd dotnet
 dotnet run --project samples/ClaimIntake -- --export /tmp/claim.json
-dotnet run --project src/Tracescribe.Mcp -- failures --path /tmp/claim.json
+dotnet run --project src/Tracescribe.Mcp -f net8.0 -- failures --path /tmp/claim.json
 ```
 
 ## Repo layout
@@ -289,7 +293,7 @@ dotnet test
 python3 ../spec/tools/generate_dotnet.py   # after editing spec/attributes.yaml
 ```
 
-Requires the .NET 8 SDK. CI also runs the sample, the CLI and an MCP stdio smoke test, packs all
+Requires the .NET 10 SDK (pinned in `global.json`) and the .NET 8 runtime for the net8.0 tests. CI also runs the sample, the CLI and an MCP stdio smoke test, packs all
 packages and installs the MCP tool from its package.
 
 ## Releasing
@@ -309,6 +313,13 @@ that tag. The tag sets the package version; nuget.org versions can be unlisted b
 
 ## Roadmap
 
+Done in v0.4 (1.0 groundwork):
+
+- [x] Target frameworks: .NET 8, .NET 10 and .NET Standard 2.0 for the libraries services reference
+- [x] Dependencies upgraded (OpenTelemetry 1.20, MCP SDK 2.x) and pinned centrally in `Directory.Packages.props`
+- [x] API trimmed for 1.0 (backend HTTP plumbing and query builders made internal); package validation fails the build on unreviewed breaking changes
+- [x] Spec: stability per attribute, intent naming rules, `failure.class` extension rules, versioning policy
+
 Done in v0.3:
 
 - [x] `find_logs` MCP tool and `logs` CLI command keyed by `tracescribe.intent`, over Loki, Azure Monitor and OTLP/JSON log files
@@ -326,8 +337,10 @@ Done in v0.2:
 - [x] Source generator for `[Scribe]` methods
 - [x] Constants generated from `spec/attributes.yaml`
 
-Next:
+Next, for 1.0:
 
+- [ ] 1.0.0-rc.1: integration tests against real Jaeger, Tempo and Loki; benchmarks; MCP output hardening; docs
+- [ ] 1.0.0 after the release candidate runs in a real service
 - [ ] Java SDK sharing `spec/`
 
 ## Prior art

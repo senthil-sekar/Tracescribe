@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Runs the core test suite against the netstandard2.0 build of Tracescribe (the one .NET Framework services load),
+    on the .NET 8 runtime. This exercises the netstandard2.0-only code paths: build/Polyfills.cs and the
+    non-generated redaction regexes.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <RootNamespace>Tracescribe.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Tracescribe\Tracescribe.csproj" SetTargetFramework="TargetFramework=netstandard2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Tracescribe.Tests\TestHelpers.cs" Link="TestHelpers.cs" />
+    <Compile Include="..\Tracescribe.Tests\ScribeTests.cs" Link="ScribeTests.cs" />
+    <Compile Include="..\Tracescribe.Tests\EnricherTests.cs" Link="EnricherTests.cs" />
+    <Compile Include="..\Tracescribe.Tests\ExceptionInferenceTests.cs" Link="ExceptionInferenceTests.cs" />
+    <Compile Include="..\Tracescribe.Tests\RedactionAndClassifierTests.cs" Link="RedactionAndClassifierTests.cs" />
+    <Compile Include="..\Tracescribe.Tests\ReaderTests.cs" Link="ReaderTests.cs" />
+    <Compile Include="..\Tracescribe.Tests\TriageDigestTests.cs" Link="TriageDigestTests.cs" />
+  </ItemGroup>
+</Project>

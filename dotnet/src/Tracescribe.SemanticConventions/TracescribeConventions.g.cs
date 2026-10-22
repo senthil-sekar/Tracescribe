@@ -8,7 +8,7 @@ namespace Tracescribe.SemanticConventions;
 public static class TracescribeAttributes
 {
     /// <summary>Version of the conventions this SDK emits.</summary>
-    public const string SchemaVersionValue = "0.2.0";
+    public const string SchemaVersionValue = "0.4.0";
 
     /// <summary>Prefix shared by every Tracescribe attribute.</summary>
     public const string Prefix = "tracescribe.";
@@ -17,6 +17,7 @@ public static class TracescribeAttributes
     public const string SchemaVersion = "tracescribe.schema.version";
 
     /// <summary><c>tracescribe.intent</c>: Stable, dot-separated name of the business operation.</summary>
+    /// <remarks>Low cardinality. Lower-case segments of [a-z0-9_] separated by dots, usually &lt;domain&gt;.&lt;entity&gt;.&lt;action&gt;. Must not contain identifiers; use tracescribe.context.* for IDs. Also set on log records emitted inside an intent span.</remarks>
     public const string Intent = "tracescribe.intent";
 
     /// <summary><c>tracescribe.intent.description</c>: One-sentence description of what the operation is trying to achieve.</summary>
@@ -32,9 +33,11 @@ public static class TracescribeAttributes
     public const string OutcomeStatus = "tracescribe.outcome.status";
 
     /// <summary><c>tracescribe.outcome.matched</c>: Whether the actual outcome satisfied the expected outcome.</summary>
+    /// <remarks>matched=false with span status OK identifies a semantic failure.</remarks>
     public const string OutcomeMatched = "tracescribe.outcome.matched";
 
     /// <summary><c>tracescribe.failure.class</c>: Coarse failure category, chosen to route triage.</summary>
+    /// <remarks>Closed set. A minor version may add sub-values of the form &lt;class&gt;.&lt;detail&gt;, like dependency.timeout. Consumers must treat a value they don't recognise by its first segment (dependency.rate_limited is a dependency failure), and a first segment they don't recognise as unknown.</remarks>
     public const string FailureClass = "tracescribe.failure.class";
 
     /// <summary><c>tracescribe.failure.reason</c>: One-line, PII-free explanation of the failure.</summary>
@@ -47,6 +50,7 @@ public static class TracescribeAttributes
     public const string FailureInferred = "tracescribe.failure.inferred";
 
     /// <summary>Prefix for <c>tracescribe.context.&lt;key&gt;</c> attributes. Business identifiers that let an agent pivot to other data, e.g. tracescribe.context.claim_id.</summary>
+    /// <remarks>Values pass through the redaction policy before export.</remarks>
     public const string ContextPrefix = "tracescribe.context.";
 
     /// <summary>Builds a <c>tracescribe.context.&lt;key&gt;</c> attribute name.</summary>
@@ -62,6 +66,7 @@ public static class TracescribeAttributes
     public const string LinkReason = "tracescribe.link.reason";
 
     /// <summary><c>tracescribe.chat.finish_reason</c>: Finish reason reported by the model for a chat call, e.g. stop, length, tool_calls, content_filter.</summary>
+    /// <remarks>Development because the GenAI conventions it complements are not yet stable in OpenTelemetry. Development: may change in a minor version.</remarks>
     public const string ChatFinishReason = "tracescribe.chat.finish_reason";
 }
 
@@ -156,7 +161,7 @@ public static class LinkReasonValues
 /// <summary>Metric instrument names and units.</summary>
 public static class TracescribeMetrics
 {
-    /// <summary>Name of the <see cref="System.Diagnostics.Metrics.Meter"/> Tracescribe emits on.</summary>
+    /// <summary>Name of the <c>System.Diagnostics.Metrics.Meter</c> Tracescribe emits on.</summary>
     public const string MeterName = "Tracescribe";
 
     /// <summary><c>tracescribe.operation.count</c> (counter): Number of completed intent operations. Attributes: tracescribe.intent, tracescribe.outcome.status, tracescribe.failure.class.</summary>

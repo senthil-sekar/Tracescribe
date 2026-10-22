@@ -1,6 +1,5 @@
 <Project>
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -13,7 +12,7 @@
     <RepositoryUrl>https://github.com/senthil-sekar/tracescribe</RepositoryUrl>
     <PackageTags>opentelemetry;observability;ai-agents;tracing;triage</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <VersionPrefix>0.3.1</VersionPrefix>
+    <VersionPrefix>0.4.0</VersionPrefix>
     <VersionSuffix>alpha</VersionSuffix>
 
     <!-- Symbols and SourceLink so consumers can step into Tracescribe from the NuGet package. -->
@@ -22,6 +21,25 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+  <!-- netstandard2.0 builds (for .NET Framework 4.6.2+ services) get compiler polyfills: records, init, ranges,
+       nullable attributes. Source-only, so nothing is added to the package's dependencies. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0' and '$(IsRoslynComponent)' != 'true'">
+    <PackageReference Include="PolySharp" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers" />
+    <Compile Include="$(MSBuildThisFileDirectory)build/Polyfills.cs" Link="Polyfills.cs" Visible="false" />
+  </ItemGroup>
+  <!--
+    API compatibility for the libraries. On every pack, package validation checks that
+    (1) the target frameworks inside a package expose a compatible API, and
+    (2) the API is compatible with PackageValidationBaselineVersion, the last version on nuget.org.
+    Intentional breaking changes are listed in each project's CompatibilitySuppressions.xml, generated with
+      dotnet pack -c Release -p:ApiCompatGenerateSuppressionFile=true
+    After a release, set the baseline to that version and delete the suppression files.
+    The generator and the MCP tool have no API for consumers, so they are excluded.
+  -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Tracescribe' or '$(MSBuildProjectName)' == 'Tracescribe.SemanticConventions' or '$(MSBuildProjectName)' == 'Tracescribe.OpenTelemetry' or '$(MSBuildProjectName)' == 'Tracescribe.Extensions.AI' or '$(MSBuildProjectName)' == 'Tracescribe.Query'">
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>0.3.0-alpha</PackageValidationBaselineVersion>
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)PACKAGE.md" Pack="true" PackagePath="README.md" Visible="false" />

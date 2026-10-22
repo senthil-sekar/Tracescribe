@@ -8,7 +8,7 @@ namespace Tracescribe.Mcp;
 /// Bearer tokens for the Log Analytics query API from <see cref="DefaultAzureCredential"/> (Azure CLI login, managed
 /// identity, workload identity, environment service principal, ...), cached until shortly before they expire.
 /// </summary>
-public sealed class AzureTokenProvider
+internal sealed class AzureTokenProvider
 {
     private readonly TokenCredential _credential;
     private readonly TokenRequestContext _context;

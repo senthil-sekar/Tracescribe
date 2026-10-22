@@ -93,17 +93,37 @@ public sealed partial class DefaultRedactor : IRedactor
         return sum % 10 == 0;
     }
 
-    [GeneratedRegex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")]
+    private const string EmailPattern = @"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}";
+    private const string SsnPattern = @"\b\d{3}-\d{2}-\d{4}\b";
+    private const string CardPattern = @"\b(?:\d[ \-]?){12,18}\d\b";
+    private const string PhonePattern = @"(?<!\w)(?:\+?1[ .\-]?)?\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}\b";
+
+#if NET7_0_OR_GREATER
+    [GeneratedRegex(EmailPattern)]
     private static partial Regex Email();
 
-    [GeneratedRegex(@"\b\d{3}-\d{2}-\d{4}\b")]
+    [GeneratedRegex(SsnPattern)]
     private static partial Regex Ssn();
 
-    [GeneratedRegex(@"\b(?:\d[ \-]?){12,18}\d\b")]
+    [GeneratedRegex(CardPattern)]
     private static partial Regex Card();
 
-    [GeneratedRegex(@"(?<!\w)(?:\+?1[ .\-]?)?\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}\b")]
+    [GeneratedRegex(PhonePattern)]
     private static partial Regex Phone();
+#else
+    private static readonly Regex EmailRegex = new(EmailPattern, RegexOptions.Compiled);
+    private static readonly Regex SsnRegex = new(SsnPattern, RegexOptions.Compiled);
+    private static readonly Regex CardRegex = new(CardPattern, RegexOptions.Compiled);
+    private static readonly Regex PhoneRegex = new(PhonePattern, RegexOptions.Compiled);
+
+    private static Regex Email() => EmailRegex;
+
+    private static Regex Ssn() => SsnRegex;
+
+    private static Regex Card() => CardRegex;
+
+    private static Regex Phone() => PhoneRegex;
+#endif
 }
 
 /// <summary>Process-wide redaction defaults.</summary>

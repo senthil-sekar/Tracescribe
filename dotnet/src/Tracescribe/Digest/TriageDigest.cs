@@ -122,7 +122,10 @@ public static class TriageDigest
             return SpanHealth.Partial;
         }
 
-        if (failureClass == FailureClassValues.Semantic || matched == "false")
+        // Sub-values such as semantic.<detail> belong to their first segment (spec 3.3).
+        if (failureClass == FailureClassValues.Semantic
+            || failureClass?.StartsWith(FailureClassValues.Semantic + ".", StringComparison.Ordinal) == true
+            || matched == "false")
         {
             return SpanHealth.Semantic;
         }
@@ -503,7 +506,7 @@ public static class TriageDigest
         }
 
         var single = (o.Redactor is null ? value : o.Redactor.Redact("text", value, out _)).ReplaceLineEndings(" ");
-        return single.Length <= o.MaxValueLength ? single : string.Concat(single.AsSpan(0, o.MaxValueLength), "…");
+        return single.Length <= o.MaxValueLength ? single : single.Substring(0, o.MaxValueLength) + "…";
     }
 
     private static string FormatDuration(TimeSpan d) => d.TotalSeconds >= 1

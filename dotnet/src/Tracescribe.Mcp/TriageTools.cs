@@ -7,7 +7,7 @@ namespace Tracescribe.Mcp;
 
 /// <summary>MCP tools exposed by the Tracescribe server. Each returns compact, agent-readable text.</summary>
 [McpServerToolType]
-public sealed class TriageTools
+internal sealed class TriageTools
 {
     private readonly TriageService _triage;
 

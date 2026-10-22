@@ -37,9 +37,33 @@ def e(text: str | None) -> str:
     return escape(" ".join((text or "").split()), quote=False)
 
 
-def doc(xml: str, indent: str) -> str:
-    """Emit a summary comment; xml must already be escaped."""
-    return f"{indent}/// <summary>{xml}</summary>\n"
+def doc(xml: str, indent: str, entry: dict | None = None) -> str:
+    """Emit a summary comment; xml must already be escaped. With an entry, adds its note and stability as remarks."""
+    text = f"{indent}/// <summary>{xml}</summary>\n"
+    if entry is not None:
+        remarks = []
+        if entry.get("note"):
+            remarks.append(e(entry["note"]))
+        if entry["stability"] == "development":
+            remarks.append("Development: may change in a minor version.")
+        if remarks:
+            text += f"{indent}/// <remarks>{' '.join(remarks)}</remarks>\n"
+    return text
+
+
+STABILITIES = {"stable", "development"}
+
+
+def check_stability(spec: dict) -> None:
+    """Every attribute, event, event attribute and metric must declare a known stability."""
+    entries = list(spec["attributes"]) + list(spec.get("metrics", []))
+    for event in spec.get("events", []):
+        entries.append(event)
+        entries.extend(event.get("attributes", []))
+    for entry in entries:
+        name = entry.get("id") or entry.get("name")
+        if entry.get("stability") not in STABILITIES:
+            raise SystemExit(f"spec/attributes.yaml: '{name}' needs stability: stable or development")
 
 
 def literal(value: str) -> str:
@@ -69,12 +93,12 @@ def generate(spec: dict) -> str:
         name = pascal(strip_ns(attr_id, ns))
         w("\n")
         if attr["type"].startswith("template"):
-            w(doc(f"Prefix for <c>{attr_id}.&lt;key&gt;</c> attributes. {e(attr.get('brief'))}", "    "))
+            w(doc(f"Prefix for <c>{attr_id}.&lt;key&gt;</c> attributes. {e(attr.get('brief'))}", "    ", attr))
             w(f"    public const string {name}Prefix = {literal(attr_id + '.')};\n\n")
             w(doc(f"Builds a <c>{attr_id}.&lt;key&gt;</c> attribute name.", "    "))
             w(f"    public static string {name}(string key) => {name}Prefix + key;\n")
             continue
-        w(doc(f"<c>{attr_id}</c>: {e(attr.get('brief'))}", "    "))
+        w(doc(f"<c>{attr_id}</c>: {e(attr.get('brief'))}", "    ", attr))
         w(f"    public const string {name} = {literal(attr_id)};\n")
         if attr["type"] == "enum":
             enums.append(attr)
@@ -88,11 +112,11 @@ def generate(spec: dict) -> str:
         if not first:
             w("\n")
         first = False
-        w(doc(f"Event <c>{event['name']}</c>: {e(event.get('brief'))}", "    "))
+        w(doc(f"Event <c>{event['name']}</c>: {e(event.get('brief'))}", "    ", event))
         w(f"    public const string {pascal(strip_ns(event['name'], ns))} = {literal(event['name'])};\n")
         for attr in event.get("attributes", []):
             w("\n")
-            w(doc(f"<c>{attr['id']}</c>: {e(attr.get('brief'))}", "    "))
+            w(doc(f"<c>{attr['id']}</c>: {e(attr.get('brief'))}", "    ", attr))
             w(f"    public const string {pascal(strip_ns(attr['id'], ns))} = {literal(attr['id'])};\n")
     w("}\n")
 
@@ -113,12 +137,12 @@ def generate(spec: dict) -> str:
     w("\n")
     w(doc("Metric instrument names and units.", ""))
     w("public static class TracescribeMetrics\n{\n")
-    w(doc("Name of the <see cref=\"System.Diagnostics.Metrics.Meter\"/> Tracescribe emits on.", "    "))
+    w(doc("Name of the <c>System.Diagnostics.Metrics.Meter</c> Tracescribe emits on.", "    "))
     w(f"    public const string MeterName = {literal(spec['meter_name'])};\n")
     for metric in spec.get("metrics", []):
         name = pascal(strip_ns(metric["name"], ns))
         w("\n")
-        w(doc(f"<c>{metric['name']}</c> ({metric['instrument']}): {e(metric.get('brief'))} Attributes: {', '.join(metric.get('attributes', []))}.", "    "))
+        w(doc(f"<c>{metric['name']}</c> ({metric['instrument']}): {e(metric.get('brief'))} Attributes: {', '.join(metric.get('attributes', []))}.", "    ", metric))
         w(f"    public const string {name} = {literal(metric['name'])};\n\n")
         w(doc(f"Unit of <c>{metric['name']}</c>.", "    "))
         w(f"    public const string {name}Unit = {literal(metric['unit'])};\n")
@@ -132,6 +156,7 @@ def main() -> int:
     args = parser.parse_args()
 
     spec = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    check_stability(spec)
     code = generate(spec)
     if args.check:
         current = OUT.read_text(encoding="utf-8") if OUT.exists() else ""

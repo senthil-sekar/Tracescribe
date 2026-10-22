@@ -19,7 +19,7 @@ namespace Tracescribe.Query;
 /// Authenticates with a Microsoft Entra bearer token for <see cref="DefaultScope"/>. The caller needs the
 /// Log Analytics Reader role (or <c>Microsoft.OperationalInsights/workspaces/query/read</c>) on the workspace.
 /// </remarks>
-public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
+public sealed class AzureMonitorBackend : ITraceBackend, ILogBackend
 {
     /// <summary>Public cloud Log Analytics query endpoint.</summary>
     public const string DefaultUrl = "https://api.loganalytics.azure.com";
@@ -28,6 +28,7 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
     public const string DefaultScope = "https://api.loganalytics.io/.default";
 
     private const string SpanTables = "AppRequests, AppDependencies";
+    private readonly HttpQueryClient _client;
     private readonly string _workspaceId;
     private readonly Func<CancellationToken, ValueTask<string>>? _accessToken;
 
@@ -38,24 +39,25 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
     /// <param name="accessToken">Returns a bearer token for <see cref="DefaultScope"/>; called per request so tokens can refresh.
     /// <c>null</c> when <paramref name="http"/> already sends an <c>Authorization</c> header.</param>
     public AzureMonitorBackend(HttpClient http, Uri baseUrl, string workspaceId, Func<CancellationToken, ValueTask<string>>? accessToken = null)
-        : base(http, baseUrl)
     {
+        _client = new HttpQueryClient(http, baseUrl, "azuremonitor", AuthorizeAsync);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
         _workspaceId = workspaceId.Trim();
         _accessToken = accessToken;
     }
 
     /// <inheritdoc />
-    public override string Name => "azuremonitor";
+    public string Name => "azuremonitor";
 
     /// <summary>How far back <see cref="GetTraceAsync"/> and trace-id log searches look. Default 7 days.</summary>
     public TimeSpan TraceWindow { get; init; } = TimeSpan.FromDays(7);
 
-    /// <summary>KQL that finds failing operation ids. Public for transparency and testing.</summary>
-    public static string SearchKql(TraceQuery query)
+    /// <summary>KQL that finds failing operation ids.</summary>
+    internal static string SearchKql(TraceQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var semantic = $"tostring(Properties[{Quote(TracescribeAttributes.OutcomeMatched)}]) =~ \"false\" or tostring(Properties[{Quote(TracescribeAttributes.FailureClass)}]) == \"semantic\"";
+        var failureClass = $"tostring(Properties[{Quote(TracescribeAttributes.FailureClass)}])";
+        var semantic = $"tostring(Properties[{Quote(TracescribeAttributes.OutcomeMatched)}]) =~ \"false\" or {failureClass} == \"semantic\" or {failureClass} startswith_cs \"semantic.\"";
         var failure = query.Kind switch
         {
             FailureKind.Error => "Success == false",
@@ -76,8 +78,8 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
         return sb.ToString();
     }
 
-    /// <summary>KQL that loads every span, exception and span event of the given traces. Public for transparency and testing.</summary>
-    public static string TraceKql(IEnumerable<string> traceIds)
+    /// <summary>KQL that loads every span, exception and span event of the given traces.</summary>
+    internal static string TraceKql(IEnumerable<string> traceIds)
     {
         var ids = string.Join(", ", traceIds.Select(id => Quote(id.Trim().ToLowerInvariant())));
         return $"""
@@ -88,8 +90,8 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
             """.ReplaceLineEndings("\n");
     }
 
-    /// <summary>KQL that searches logs in <c>AppTraces</c>. Public for transparency and testing.</summary>
-    public static string LogsKql(LogQuery query)
+    /// <summary>KQL that searches logs in <c>AppTraces</c>.</summary>
+    internal static string LogsKql(LogQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
         var sb = new StringBuilder("AppTraces\n");
@@ -122,7 +124,7 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
     }
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SpanRecord>> GetTraceAsync(string traceId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(traceId);
         var rows = await QueryAsync(TraceKql([traceId]), TraceWindow, cancellationToken).ConfigureAwait(false);
@@ -130,7 +132,7 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
     }
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<FoundTrace>> SearchAsync(TraceQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         var lookback = query.Lookback ?? TimeSpan.FromHours(1);
@@ -148,7 +150,7 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
     }
 
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<string>> ListServicesAsync(CancellationToken cancellationToken = default)
     {
         var rows = await QueryAsync($"union {SpanTables} | where isnotempty(AppRoleName) | distinct AppRoleName", TraceWindow, cancellationToken).ConfigureAwait(false);
         return rows.Select(r => r.String("AppRoleName")).OfType<string>().Order(StringComparer.Ordinal).ToList();
@@ -173,8 +175,7 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
             .ToList();
     }
 
-    /// <inheritdoc />
-    protected override async ValueTask AuthorizeAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    private async ValueTask AuthorizeAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (_accessToken is not null)
         {
@@ -189,7 +190,7 @@ public sealed class AzureMonitorBackend : HttpTraceBackend, ILogBackend
             ["query"] = kql,
             ["timespan"] = XmlConvert.ToString(timespan),
         });
-        var body = await PostJsonAsync($"v1/workspaces/{Uri.EscapeDataString(_workspaceId)}/query", request, cancellationToken).ConfigureAwait(false)
+        var body = await _client.PostJsonAsync($"v1/workspaces/{Uri.EscapeDataString(_workspaceId)}/query", request, cancellationToken).ConfigureAwait(false)
             ?? throw new TraceBackendException($"{Name}: workspace '{_workspaceId}' was not found");
         return Row.ReadTable(body, Name);
     }

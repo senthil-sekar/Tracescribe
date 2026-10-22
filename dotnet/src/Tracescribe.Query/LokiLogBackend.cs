@@ -12,26 +12,26 @@ namespace Tracescribe.Query;
 /// logs. Expects logs ingested over OTLP (Loki 3+), where attributes become structured metadata with dots replaced by
 /// underscores: <c>tracescribe_intent</c>, <c>trace_id</c>, <c>severity_number</c>.
 /// </summary>
-public sealed class LokiLogBackend : HttpBackend, ILogBackend
+public sealed class LokiLogBackend : ILogBackend
 {
+    private readonly HttpQueryClient _client;
+
     private static readonly HashSet<string> Reserved = new(StringComparer.Ordinal)
     {
         "service_name", "trace_id", "span_id", "severity_text", "severity_number", "detected_level", "observed_timestamp", "flags",
     };
 
     /// <summary>Creates the backend.</summary>
-    public LokiLogBackend(HttpClient http, Uri baseUrl) : base(http, baseUrl)
-    {
-    }
+    public LokiLogBackend(HttpClient http, Uri baseUrl) => _client = new HttpQueryClient(http, baseUrl, "loki");
 
     /// <inheritdoc />
-    public override string Name => "loki";
+    public string Name => "loki";
 
     /// <summary>OTLP attribute name as Loki stores it.</summary>
-    public static string Label(string attribute) => attribute.Replace('.', '_');
+    internal static string Label(string attribute) => attribute.Replace('.', '_');
 
-    /// <summary>Builds the LogQL query used for a search. Public for transparency and testing.</summary>
-    public static string LogQl(LogQuery query)
+    /// <summary>Builds the LogQL query used for a search.</summary>
+    internal static string LogQl(LogQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
         var sb = new StringBuilder();
@@ -60,15 +60,15 @@ public sealed class LokiLogBackend : HttpBackend, ILogBackend
     {
         ArgumentNullException.ThrowIfNull(query);
         // A trace id pins the search, so look further back than the default hour when no window is given.
-        var (start, end) = Window(query.Lookback ?? (query.TraceId is null ? null : TimeSpan.FromDays(7)));
+        var (start, end) = HttpQueryClient.Window(query.Lookback ?? (query.TraceId is null ? null : TimeSpan.FromDays(7)));
         var path = string.Create(CultureInfo.InvariantCulture,
             $"loki/api/v1/query_range?query={Uri.EscapeDataString(LogQl(query))}&start={start.ToUnixTimeMilliseconds() * 1_000_000}&end={end.ToUnixTimeMilliseconds() * 1_000_000}&limit={query.Limit}&direction=backward");
-        var body = await GetAsync(path, cancellationToken).ConfigureAwait(false);
+        var body = await _client.GetAsync(path, cancellationToken).ConfigureAwait(false);
         return body is null ? [] : Read(body).Where(query.Matches).OrderByDescending(l => l.Timestamp).Take(query.Limit).ToList();
     }
 
     /// <summary>Reads log records from a Loki <c>streams</c> response.</summary>
-    public static IReadOnlyList<LogEntry> Read(string json)
+    internal static IReadOnlyList<LogEntry> Read(string json)
     {
         using var doc = JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("data", out var data)

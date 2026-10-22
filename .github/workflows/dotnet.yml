@@ -16,7 +16,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 8.0.x
+          # global.json pins the 10.0 SDK; the 8.0 runtime runs the net8.0 tests.
+          dotnet-version: |
+            8.0.x
+            10.0.x
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -39,8 +42,8 @@ jobs:
 
       - name: CLI against the exported trace
         run: |
-          dotnet run --project src/Tracescribe.Mcp -c Release --no-build -- failures --path ${{ runner.temp }}/claim-trace.json
-          dotnet run --project src/Tracescribe.Mcp -c Release --no-build -- services --path ${{ runner.temp }}/claim-trace.json
+          dotnet run --project src/Tracescribe.Mcp -f net8.0 -c Release --no-build -- failures --path ${{ runner.temp }}/claim-trace.json
+          dotnet run --project src/Tracescribe.Mcp -f net8.0 -c Release --no-build -- services --path ${{ runner.temp }}/claim-trace.json
 
       - name: MCP server smoke test (stdio)
         run: python tests/mcp_smoke.py ${{ runner.temp }}/claim-trace.json -- dotnet src/Tracescribe.Mcp/bin/Release/net8.0/Tracescribe.Mcp.dll
