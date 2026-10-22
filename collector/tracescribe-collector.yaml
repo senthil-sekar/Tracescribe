@@ -3,8 +3,9 @@
 # 1. Redacts PII-shaped values that instrumentation outside Tracescribe may emit: exception messages on
 #    span events (recorded by ASP.NET Core, HttpClient, SDKs) and log bodies. Tracescribe's own SDK already
 #    redacts what it records; this covers everything else on the wire.
-# 2. Writes traces as OTLP/JSON lines that the Tracescribe MCP server and CLI can read directly:
+# 2. Writes traces and logs as OTLP/JSON lines that the Tracescribe MCP server and CLI can read directly:
 #      tracescribe-mcp failures --path /var/lib/otelcol
+#      tracescribe-mcp logs --path /var/lib/otelcol --intent claim.fnol.submit
 # 3. Forwards everything to your real backend.
 #
 # Requires the contrib distribution (otelcol-contrib) for the transform processor and file exporter.
@@ -40,6 +41,11 @@ exporters:
     rotation:
       max_megabytes: 50
       max_backups: 3
+  file/tracescribe-logs:
+    path: /var/lib/otelcol/logs.jsonl
+    rotation:
+      max_megabytes: 50
+      max_backups: 3
   otlp/backend:
     endpoint: jaeger:4317 # or tempo:4317, or your vendor's OTLP endpoint
     tls:
@@ -54,7 +60,7 @@ service:
     logs:
       receivers: [otlp]
       processors: [transform/tracescribe-redaction, batch]
-      exporters: [otlp/backend]
+      exporters: [otlp/backend, file/tracescribe-logs]
     metrics:
       receivers: [otlp]
       processors: [batch]

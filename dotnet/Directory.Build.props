@@ -12,7 +12,18 @@
     <PackageProjectUrl>https://github.com/senthil-sekar/tracescribe</PackageProjectUrl>
     <RepositoryUrl>https://github.com/senthil-sekar/tracescribe</RepositoryUrl>
     <PackageTags>opentelemetry;observability;ai-agents;tracing;triage</PackageTags>
-    <VersionPrefix>0.2.0</VersionPrefix>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <VersionPrefix>0.3.0</VersionPrefix>
     <VersionSuffix>alpha</VersionSuffix>
+
+    <!-- Symbols and SourceLink so consumers can step into Tracescribe from the NuGet package. -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)PACKAGE.md" Pack="true" PackagePath="README.md" Visible="false" />
+  </ItemGroup>
 </Project>

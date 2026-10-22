@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using Tracescribe.Digest;
 using Tracescribe.Query;
 
 namespace Tracescribe.Mcp;
@@ -46,6 +47,37 @@ public sealed class TriageTools
             limit,
             failureKind);
         return _triage.FindFailuresTextAsync(query, cancellationToken);
+    }
+
+    /// <summary>Log records for an intent, trace or service.</summary>
+    [McpServerTool(Name = "find_logs", ReadOnly = true)]
+    [Description("Finds log records written inside a business operation, keyed by its tracescribe.intent (e.g. claim.fnol.submit), " +
+                 "by trace id, or by service. Returns one line per record, oldest first, with severity, span id, message and attributes. " +
+                 "Use it after get_trace_digest to read what the code logged around a failing span, or with an intent to see a " +
+                 "failure pattern across many traces.")]
+    public Task<string> FindLogs(
+        [Description("tracescribe.intent to match exactly, or a prefix ending in '*' such as 'claim.*'.")] string? intent = null,
+        [Description("Only records written in this trace (32 hex characters).")] string? traceId = null,
+        [Description("Only records from this service.")] string? service = null,
+        [Description("How many minutes back to search. Omit for the backend default (60 minutes, or 7 days with a trace id; all data for files).")] int? lookbackMinutes = null,
+        [Description("Lowest severity to include: trace, debug, info, warn, error or fatal. Omit for all.")] string? minSeverity = null,
+        [Description("Maximum records to return (1-200); the newest are kept.")] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var severity = LogEntry.ParseSeverity(minSeverity);
+        if (!string.IsNullOrWhiteSpace(minSeverity) && severity == LogSeverity.Unspecified)
+        {
+            return Task.FromResult($"Unknown severity '{minSeverity}'. Use trace, debug, info, warn, error or fatal.");
+        }
+
+        var query = new LogQuery(
+            string.IsNullOrWhiteSpace(intent) ? null : intent.Trim(),
+            string.IsNullOrWhiteSpace(traceId) ? null : traceId.Trim(),
+            string.IsNullOrWhiteSpace(service) ? null : service,
+            lookbackMinutes is { } minutes ? TimeSpan.FromMinutes(Math.Clamp(minutes, 1, 60 * 24 * 7)) : null,
+            severity,
+            limit);
+        return _triage.FindLogsTextAsync(query, cancellationToken);
     }
 
     /// <summary>Known services.</summary>

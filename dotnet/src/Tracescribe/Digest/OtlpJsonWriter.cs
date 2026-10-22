@@ -64,6 +64,64 @@ public static class OtlpJsonWriter
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
+    /// <summary>Serializes log records as OTLP/JSON logs (<c>ExportLogsServiceRequest</c>), grouped by service.</summary>
+    /// <param name="logs">Log records to write.</param>
+    /// <param name="defaultService">Service name for records whose <see cref="LogEntry.Service"/> is unknown.</param>
+    /// <param name="indented">Pretty-print the JSON.</param>
+    public static string WriteLogs(IEnumerable<LogEntry> logs, string? defaultService = null, bool indented = false)
+    {
+        using var stream = new MemoryStream();
+        using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = indented }))
+        {
+            w.WriteStartObject();
+            w.WriteStartArray("resourceLogs");
+            foreach (var byService in logs.GroupBy(l => l.Service ?? defaultService))
+            {
+                w.WriteStartObject();
+                w.WriteStartObject("resource");
+                w.WriteStartArray("attributes");
+                if (byService.Key is { } service)
+                {
+                    WriteAttribute(w, "service.name", service);
+                }
+
+                w.WriteEndArray();
+                w.WriteEndObject();
+
+                w.WriteStartArray("scopeLogs");
+                w.WriteStartObject();
+                w.WriteStartArray("logRecords");
+                foreach (var log in byService)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("timeUnixNano", Nanos(log.Timestamp).ToString(CultureInfo.InvariantCulture));
+                    w.WriteNumber("severityNumber", (int)log.Severity);
+                    if (log.Severity != LogSeverity.Unspecified)
+                    {
+                        w.WriteString("severityText", log.Severity.ToString().ToUpperInvariant());
+                    }
+
+                    w.WritePropertyName("body");
+                    WriteAnyValue(w, log.Body);
+                    WriteAttributes(w, log.Attributes);
+                    w.WriteString("traceId", log.TraceId ?? string.Empty);
+                    w.WriteString("spanId", log.SpanId ?? string.Empty);
+                    w.WriteEndObject();
+                }
+
+                w.WriteEndArray();
+                w.WriteEndObject();
+                w.WriteEndArray();
+                w.WriteEndObject();
+            }
+
+            w.WriteEndArray();
+            w.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
     private static void WriteSpan(Utf8JsonWriter w, SpanRecord span)
     {
         w.WriteStartObject();

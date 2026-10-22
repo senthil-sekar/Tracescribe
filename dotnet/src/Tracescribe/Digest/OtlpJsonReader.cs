@@ -19,19 +19,37 @@ public static class OtlpJsonReader
     public static IReadOnlyList<SpanRecord> Read(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
-        var spans = new List<SpanRecord>();
+        return ReadAll<SpanRecord>(json, ReadDocument);
+    }
+
+    /// <summary>Reads all spans from a file of OTLP/JSON.</summary>
+    public static IReadOnlyList<SpanRecord> ReadFile(string path) => Read(File.ReadAllText(path));
+
+    /// <summary>
+    /// Reads all log records from OTLP/JSON logs (<c>ExportLogsServiceRequest</c>, <c>resourceLogs</c>), as written
+    /// by the Collector file exporter. Text without logs yields an empty list.
+    /// </summary>
+    public static IReadOnlyList<LogEntry> ReadLogs(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        return ReadAll<LogEntry>(json, ReadLogsDocument);
+    }
+
+    private static List<T> ReadAll<T>(string json, Action<JsonElement, List<T>> readDocument)
+    {
+        var items = new List<T>();
         try
         {
             using var doc = JsonDocument.Parse(json);
-            ReadDocument(doc.RootElement, spans);
-            return spans;
+            readDocument(doc.RootElement, items);
+            return items;
         }
         catch (JsonException) when (json.Contains('\n'))
         {
             // JSON lines: the Collector file exporter writes one request per line.
         }
 
-        spans.Clear();
+        items.Clear();
         foreach (var line in json.Split('\n'))
         {
             if (string.IsNullOrWhiteSpace(line))
@@ -40,14 +58,81 @@ public static class OtlpJsonReader
             }
 
             using var doc = JsonDocument.Parse(line);
-            ReadDocument(doc.RootElement, spans);
+            readDocument(doc.RootElement, items);
         }
 
-        return spans;
+        return items;
     }
 
-    /// <summary>Reads all spans from a file of OTLP/JSON.</summary>
-    public static IReadOnlyList<SpanRecord> ReadFile(string path) => Read(File.ReadAllText(path));
+    private static void ReadLogsDocument(JsonElement root, List<LogEntry> logs)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+            {
+                ReadLogsDocument(item, logs);
+            }
+
+            return;
+        }
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        foreach (var resourceLogs in ArrayOf(root, "resourceLogs"))
+        {
+            string? service = null;
+            if (resourceLogs.TryGetProperty("resource", out var resource))
+            {
+                service = SpanRecord.Format(Attributes(resource).GetValueOrDefault("service.name"));
+            }
+
+            foreach (var scopeLogs in ArrayOf(resourceLogs, "scopeLogs", "instrumentationLibraryLogs"))
+            {
+                foreach (var record in ArrayOf(scopeLogs, "logRecords"))
+                {
+                    var time = Nanos(record, "timeUnixNano");
+                    if (time == 0)
+                    {
+                        time = Nanos(record, "observedTimeUnixNano");
+                    }
+
+                    var severity = LogEntry.FromSeverityNumber(SeverityNumber(record));
+                    if (severity == LogSeverity.Unspecified && record.TryGetProperty("severityText", out var text))
+                    {
+                        severity = LogEntry.ParseSeverity(text.GetString());
+                    }
+
+                    var body = record.TryGetProperty("body", out var b) ? SpanRecord.Format(AnyValue(b)) ?? string.Empty : string.Empty;
+                    logs.Add(new LogEntry(ToTime(time), severity, body, Id(record, "traceId", 32), Id(record, "spanId", 16), Attributes(record))
+                    {
+                        Service = service,
+                    });
+                }
+            }
+        }
+    }
+
+    private static int SeverityNumber(JsonElement record)
+    {
+        if (!record.TryGetProperty("severityNumber", out var v))
+        {
+            return 0;
+        }
+
+        if (v.ValueKind == JsonValueKind.Number)
+        {
+            return v.GetInt32();
+        }
+
+        // Proto enum name, e.g. SEVERITY_NUMBER_WARN2.
+        var name = v.GetString() ?? string.Empty;
+        var digits = name.Length > 0 && char.IsDigit(name[^1]) ? name[^1] - '1' : 0;
+        var baseNumber = LogEntry.ParseSeverity(name.Replace("SEVERITY_NUMBER_", string.Empty, StringComparison.Ordinal));
+        return baseNumber == LogSeverity.Unspecified ? 0 : (int)baseNumber + digits;
+    }
 
     private static void ReadDocument(JsonElement root, List<SpanRecord> spans)
     {
