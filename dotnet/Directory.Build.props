@@ -39,7 +39,7 @@
   -->
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Tracescribe' or '$(MSBuildProjectName)' == 'Tracescribe.SemanticConventions' or '$(MSBuildProjectName)' == 'Tracescribe.OpenTelemetry' or '$(MSBuildProjectName)' == 'Tracescribe.Extensions.AI' or '$(MSBuildProjectName)' == 'Tracescribe.Query'">
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>0.3.0-alpha</PackageValidationBaselineVersion>
+    <PackageValidationBaselineVersion>1.0.0-rc.1</PackageValidationBaselineVersion>
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)PACKAGE.md" Pack="true" PackagePath="README.md" Visible="false" />
