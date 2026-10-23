@@ -106,6 +106,30 @@ public class ReaderTests
     """;
 
     [Fact]
+    public void Jaeger_array_attributes_come_back_as_arrays()
+    {
+        // Jaeger stores array attributes as JSON strings; the conventions' arrays are restored, other strings aren't.
+        const string json = """
+            {"data":[{"traceID":"5b8efff798038103d269b633813fc60c","spans":[
+              {"traceID":"5b8efff798038103d269b633813fc60c","spanID":"eee19b7ec3c1b174","operationName":"claim.fnol.submit","references":[],
+               "startTime":1760000000000000,"duration":500000,"processID":"p1",
+               "tags":[{"key":"tracescribe.redacted.keys","type":"string","value":"[\"tracescribe.context.reporter_email\"]"},
+                       {"key":"note","type":"string","value":"[not json"}],
+               "logs":[{"timestamp":1760000000100000,"fields":[{"key":"event","type":"string","value":"tracescribe.decision"},
+                       {"key":"tracescribe.decision.name","type":"string","value":"vin.fallback"},
+                       {"key":"tracescribe.decision.alternatives","type":"string","value":"[\"retry_decoder\",\"ask_claimant\"]"}]}]}],
+             "processes":{"p1":{"serviceName":"claims-api","tags":[]}}}]}
+            """;
+        var span = Assert.Single(JaegerJsonReader.Read(json));
+
+        Assert.Equal(new[] { "tracescribe.context.reporter_email" }, span.Attributes[TracescribeAttributes.RedactedKeys]);
+        Assert.Equal("[not json", span.Attributes["note"]);
+        var decision = Assert.Single(span.Events);
+        Assert.Equal(new[] { "retry_decoder", "ask_claimant" }, decision.Attributes[TracescribeEvents.DecisionAlternatives]);
+        Assert.Contains("alts=[retry_decoder, ask_claimant]", TriageDigest.Render([span]));
+    }
+
+    [Fact]
     public void Reads_jaeger_json()
     {
         var spans = JaegerJsonReader.Read(JaegerJson);

@@ -32,7 +32,11 @@ jobs:
 
       - run: dotnet restore Tracescribe.sln
       - run: dotnet build Tracescribe.sln -c Release --no-restore
-      - run: dotnet test Tracescribe.sln -c Release --no-build --logger "console;verbosity=normal" --logger trx --results-directory ${{ runner.temp }}/test-results
+      # Includes Tracescribe.Backends.Tests against real Jaeger, Tempo and Loki containers. Without Docker those
+      # tests would skip; TRACESCRIBE_REQUIRE_BACKENDS makes that a failure instead.
+      - env:
+          TRACESCRIBE_REQUIRE_BACKENDS: "1"
+        run: dotnet test Tracescribe.sln -c Release --no-build --logger "console;verbosity=normal" --logger trx --results-directory ${{ runner.temp }}/test-results
       - name: Report failed tests
         if: failure()
         run: python tests/report_trx.py ${{ runner.temp }}/test-results

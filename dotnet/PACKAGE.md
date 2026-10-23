@@ -34,4 +34,4 @@ catch (Exception ex)
 Docs, the MCP setup for Claude Code, Claude Desktop, Cursor and VS Code, and the convention spec:
 https://github.com/senthil-sekar/tracescribe
 
-Status: alpha. Attribute names may change before 1.0.
+Status: 1.0 release candidate. See the versioning policy: https://github.com/senthil-sekar/Tracescribe/blob/main/docs/versioning.md

@@ -13,5 +13,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Tracescribe.Tests" />
     <InternalsVisibleTo Include="Tracescribe.NetStandard.Tests" />
+    <InternalsVisibleTo Include="Tracescribe.Query" />
   </ItemGroup>
 </Project>

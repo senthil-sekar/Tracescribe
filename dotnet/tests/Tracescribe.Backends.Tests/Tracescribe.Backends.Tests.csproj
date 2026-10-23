@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    End-to-end tests against real Jaeger, Grafana Tempo and Grafana Loki containers (Testcontainers).
+    They skip when Docker isn't available, unless TRACESCRIBE_REQUIRE_BACKENDS=1 (CI sets it), which turns
+    a missing Docker into a failure.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Testcontainers" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Tracescribe.OpenTelemetry\Tracescribe.OpenTelemetry.csproj" />
+    <ProjectReference Include="..\..\src\Tracescribe.Query\Tracescribe.Query.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="tempo.yaml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
