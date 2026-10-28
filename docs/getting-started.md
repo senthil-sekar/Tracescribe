@@ -37,6 +37,10 @@ builder.Logging.AddOpenTelemetry(o =>
 With only this, every span gets a **failure class inferred** from exceptions and HTTP status codes, and context
 values are redacted before export.
 
+For PII in data Tracescribe doesn't record itself (third-party exception messages, log bodies), add the
+redaction processors in [`collector/tracescribe-collector.yaml`](../collector/tracescribe-collector.yaml) to your
+OpenTelemetry Collector.
+
 ## 3. Name your business operations
 
 Wrap the operations you'd want explained during an incident:
@@ -79,9 +83,38 @@ op.Decide("vin.fallback", chosen: "first_vehicle_on_policy", alternatives: ["ret
 op.Hint("Mismatch here usually means the VIN fallback picked the wrong vehicle on a multi-vehicle policy");
 ```
 
-Prefer attributes to boilerplate? Add `Tracescribe.Generators` and declare
-`[Scribe("policy.lookup", Expected = "active policy found")]` on a `partial` method (see the
-[README](../README.md#or-let-the-generator-write-it)).
+### Let the generator write it
+
+Prefer attributes to boilerplate? Add `Tracescribe.Generators`:
+
+```csharp
+public partial class PolicyService
+{
+    [Scribe("policy.lookup", Expected = "active policy found")]
+    public partial Task<Policy> LookupAsync([ScribeContext("policy_id")] string policyId, CancellationToken ct);
+
+    private async Task<Policy> LookupCoreAsync(string policyId, CancellationToken ct) { /* your code */ }
+}
+```
+
+The generator writes `LookupAsync`: it opens the operation, records `policy_id`, calls `LookupCoreAsync`, and
+records success, an inferred failure, or (on caller cancellation) an unknown outcome. It supports `void`, values,
+`Task`, `Task<T>`, `ValueTask` and `ValueTask<T>`. Mistakes are compile errors (`TSCR001`–`TSCR007`).
+
+### Chat calls
+
+`Tracescribe.Extensions.AI` wraps `Microsoft.Extensions.AI` chat clients:
+
+```csharp
+IChatClient client = new ChatClientBuilder(inner)
+    .UseTracescribe("claim.summary.generate", o => o.Evaluator = ChatOutcomeEvaluators.RequireJson())
+    .UseOpenTelemetry()     // the GenAI chat span nests under the intent span
+    .Build();
+```
+
+`content_filter` stops become `policy` failures, `length` stops become `partial`, provider exceptions are
+classified, and the evaluator turns well-formed but wrong responses into semantic failures. Built-in evaluators:
+`NonEmpty`, `RequireJson`, `RequireToolCall(name)`, and `All(...)` to combine them.
 
 ## 4. Alert on semantic failures
 

@@ -3,6 +3,12 @@
 All notable changes to the Tracescribe packages and conventions. Versions follow [SemVer](https://semver.org);
 see [docs/versioning.md](docs/versioning.md) for what each kind of release may change.
 
+## Unreleased
+
+### Docs
+- Shorter README focused on what users need; internals moved to the new [docs/architecture.md](docs/architecture.md),
+  generator and chat middleware usage to [getting started](docs/getting-started.md).
+
 ## 1.0.0-rc.1
 
 Release candidate. The API and the stable conventions are what 1.0.0 will ship unless the release candidate

@@ -6,66 +6,52 @@
 [![NuGet](https://img.shields.io/nuget/vpre/Tracescribe.Mcp?label=Tracescribe.Mcp)](https://www.nuget.org/packages/Tracescribe.Mcp)
 [![dotnet](https://github.com/senthil-sekar/Tracescribe/actions/workflows/dotnet.yml/badge.svg)](https://github.com/senthil-sekar/Tracescribe/actions/workflows/dotnet.yml)
 
-Tracescribe extends the OpenTelemetry GenAI semantic conventions with triage-ready signals (intent,
-expected vs. actual outcome, failure class, decisions and business context) so AI agents can debug
-traces, logs and metrics faster. It ships an MCP server that hands agents a compact digest of any trace,
-and the logs written inside any business operation, from Jaeger, Grafana Tempo and Loki, Azure Monitor /
-Application Insights, or OTLP/JSON files. .NET first.
+Tracescribe adds triage-ready signals to OpenTelemetry (what the code was trying to do, what should have happened,
+what kind of failure it was, and which decisions it made), and an MCP server that hands an AI agent a compact
+digest of any trace. .NET first.
 
-> Status: **1.0.0 release candidate.** The API and the stable conventions are what 1.0 will ship
-> ([versioning](docs/versioning.md)). Packages are on [nuget.org](https://www.nuget.org/profiles/senthilsekar)
-> as prereleases.
-
-```bash
-dotnet add package Tracescribe.OpenTelemetry --prerelease   # or any package below
-dotnet tool install -g Tracescribe.Mcp --prerelease          # MCP server and CLI: tracescribe-mcp
-```
+> **Status: 1.0.0 release candidate.** The API and the stable conventions are what 1.0 will ship
+> ([versioning](docs/versioning.md)).
 
 **Docs:** [Getting started](docs/getting-started.md) · [Backends](docs/backends.md) ·
-[Conventions](spec/SPEC.md) · [Versioning](docs/versioning.md) · [Performance](docs/performance.md) ·
+[Conventions](spec/SPEC.md) · [Architecture](docs/architecture.md) · [Performance](docs/performance.md) ·
 [Security](SECURITY.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## Why
 
-OTel tells you *what happened*. An agent triaging an incident also needs to know:
+OpenTelemetry tells you *what happened*. An agent triaging an incident also needs to know:
 
 | Question | Tracescribe signal |
 |---|---|
 | What was the code trying to do? | `tracescribe.intent` (on spans and logs) |
 | What should have happened, and did it? | `tracescribe.outcome.expected` / `.actual` / `.matched` |
-| What kind of failure is this? | `tracescribe.failure.class` (set or inferred) |
+| What kind of failure is this? | `tracescribe.failure.class` (set, or inferred from exceptions and status codes) |
 | What did the code decide along the way? | `tracescribe.decision` events |
 | Which claim, policy or customer is involved? | `tracescribe.context.*` (redacted) |
 
-It also catches **semantic failures**: work that finished without an exception but produced the wrong
-result. Error-rate alerting never sees those.
+It also catches **semantic failures**: work that finished without an error but produced the wrong result, which
+error-rate alerting never sees. Everything is plain OpenTelemetry data, so it works with any OTLP backend.
 
-Everything is plain OTel attributes, events, links, log attributes and metrics, so it works with any
-OTLP backend. See [`spec/SPEC.md`](spec/SPEC.md).
+## Quick start
 
-## Packages
+```bash
+dotnet add package Tracescribe.OpenTelemetry --prerelease
+```
 
-Libraries that run inside your services target **.NET 8, .NET 10 and .NET Standard 2.0** (so .NET Framework
-4.6.2+ services can emit Tracescribe signals). `Tracescribe.Query` and the MCP tool target .NET 8 and .NET 10.
+Register it with OpenTelemetry. This alone infers failure classes on every span and redacts PII:
 
-| Package | Depends on | What it does |
-|---|---|---|
-| `Tracescribe.SemanticConventions` | nothing | Constants generated from [`spec/attributes.yaml`](spec/attributes.yaml) |
-| `Tracescribe` | BCL only | `Scribe` API, failure inference, redaction, metrics, `TriageDigest`, OTLP/JSON and Jaeger readers, OTLP/JSON writer |
-| `Tracescribe.Generators` | analyzer | Source generator for `[Scribe]` partial methods |
-| `Tracescribe.OpenTelemetry` | `OpenTelemetry` | Span processor, log processor (intent + redaction), meter registration, `LogRecord.ToLogEntry()` |
-| `Tracescribe.Extensions.AI` | `Microsoft.Extensions.AI` | `IChatClient` middleware: intent spans, finish-reason handling, outcome checks |
-| `Tracescribe.Query` | BCL only | Jaeger, Tempo, Loki, Azure Monitor and file backends, `TriageService` |
-| `Tracescribe.Mcp` | `ModelContextProtocol`, `Azure.Identity` | MCP server and CLI (`tracescribe-mcp`), a .NET tool |
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t.AddAspNetCoreInstrumentation().AddTracescribe().AddOtlpExporter())
+    .WithMetrics(m => m.AddTracescribe().AddOtlpExporter());
+builder.Logging.AddOpenTelemetry(o => { o.AddTracescribe(); o.AddOtlpExporter(); });
+```
 
-## Instrument your code
-
-### Wrap an operation
+Then name the business operations you'd want explained during an incident:
 
 ```csharp
 using var op = Scribe.Begin("claim.fnol.submit", expected: "claim accepted with a claim number")
-    .WithContext("claim_id", claimId)
-    .WithContext("state", "CA");
+    .WithContext("claim_id", claimId);
 try
 {
     var number = await claims.SubmitAsync(request);
@@ -73,295 +59,97 @@ try
 }
 catch (Exception ex)
 {
-    op.Fail(ex);   // failure class and retryability inferred: 429 → policy, timeout → dependency.timeout, ...
+    op.Fail(ex);   // failure class inferred: timeout → dependency.timeout, 429 → policy, ...
     throw;
 }
 ```
 
-Use `op.Mismatch(actual, reason)` when the work completed but the result is wrong, `op.Decide(...)` to
-record a branch, and `op.Hint(...)` to leave a note for whoever triages this later.
+Use `op.Mismatch(actual, reason)` when the work finished but the result is wrong, `op.Decide(...)` to record a
+branch, and `op.Hint(...)` to leave a note for whoever triages later. There's also a
+[source generator](docs/getting-started.md#let-the-generator-write-it) and
+[chat-client middleware](docs/getting-started.md#chat-calls) for `Microsoft.Extensions.AI`.
 
-### Or let the generator write it
+The libraries run on .NET 8, .NET 10 and .NET Framework 4.6.2+.
 
-```csharp
-public partial class PolicyService
-{
-    [Scribe("policy.lookup", Expected = "active policy found")]
-    public partial Task<Policy> LookupAsync([ScribeContext("policy_id")] string policyId, CancellationToken ct);
-
-    private async Task<Policy> LookupCoreAsync(string policyId, CancellationToken ct) { /* your code */ }
-}
-```
-
-`Tracescribe.Generators` writes `LookupAsync`: it opens the operation, records `policy_id`, calls
-`LookupCoreAsync`, and records success, an inferred failure, or (on caller cancellation) an unknown
-outcome. Supports `void`, values, `Task`, `Task<T>`, `ValueTask` and `ValueTask<T>`. Mistakes are
-compile errors (`TSCR001`–`TSCR007`).
-
-### Chat calls (Microsoft.Extensions.AI)
-
-```csharp
-IChatClient client = new ChatClientBuilder(inner)
-    .UseTracescribe("claim.summary.generate", o => o.Evaluator = ChatOutcomeEvaluators.RequireJson())
-    .UseOpenTelemetry()     // GenAI chat span nests under the intent span
-    .Build();
-```
-
-`content_filter` stops become `policy` failures, `length` stops become `partial`, provider exceptions are
-classified, and the evaluator turns well-formed-but-wrong responses into semantic failures. Built-in
-evaluators: `NonEmpty`, `RequireJson`, `RequireToolCall(name)`, and `All(...)` to combine them.
-
-### Register with OpenTelemetry
-
-```csharp
-builder.Services.AddOpenTelemetry()
-    .WithTracing(t => t
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddTracescribe()                 // before exporters
-        .AddOtlpExporter())
-    .WithMetrics(m => m.AddTracescribe().AddOtlpExporter());
-
-builder.Logging.AddOpenTelemetry(o =>
-{
-    o.AddTracescribe();                   // adds tracescribe.intent to logs, redacts PII
-    o.AddOtlpExporter();
-});
-```
-
-- **Spans** from any instrumentation get a failure class inferred from exception types, `error.type`
-  and HTTP status codes.
-- **Logs** written inside an operation carry its `tracescribe.intent`, and PII-shaped values are masked.
-- **Metrics** `tracescribe.operation.count` and `tracescribe.operation.duration` are broken down by
-  intent, outcome and failure class, which gives you an alert on semantic failures.
-
-For PII in data Tracescribe doesn't record itself (third-party exception messages, log bodies), use
-[`collector/tracescribe-collector.yaml`](collector/tracescribe-collector.yaml). It is an OTel Collector
-config that redacts in the pipeline and also writes OTLP/JSON trace and log files the MCP server can read.
-
-## Triage with an agent (MCP)
-
-`tracescribe-mcp` is an MCP server with four read-only tools. Telemetry can contain text written by end users or
-attackers, so every result is reduced to safe single lines and wrapped in `<telemetry>` markers that tell the
-agent to treat it as data ([SECURITY.md](SECURITY.md)).
-
-| Tool | What the agent gets |
-|---|---|
-| `find_failures` | Recent failing traces (`error`, `semantic` or `any`), newest first, each with its likely root cause |
-| `get_trace_digest` | The span tree with intent, outcomes, failure classes and decisions, healthy subtrees collapsed, then ranked root-cause candidates |
-| `find_logs` | Log records for a `tracescribe.intent` (exact, or a prefix like `claim.*`), a trace or a service, oldest first and redacted |
-| `list_services` | Service names, for filtering |
-
-| Backend | Traces | Logs (`find_logs`) |
-|---|---|---|
-| `jaeger` | Jaeger query API | Loki, if `TRACESCRIBE_LOGS_URL` is set |
-| `tempo` | Grafana Tempo (TraceQL search) | Loki, if `TRACESCRIBE_LOGS_URL` is set |
-| `azuremonitor` | Application Insights tables in a Log Analytics workspace (KQL) | `AppTraces` |
-| `file` | OTLP/JSON or Jaeger JSON files (Collector file exporter, Tempo exports, `OtlpJsonWriter`) | OTLP/JSON log files in the same place |
+## Triage with an agent
 
 ```bash
 dotnet tool install -g Tracescribe.Mcp --prerelease
+claude mcp add tracescribe -e TRACESCRIBE_BACKEND=tempo -e TRACESCRIBE_URL=http://localhost:3200 -- tracescribe-mcp
 ```
 
-From source instead: `dotnet build dotnet/src/Tracescribe.Mcp -c Release`, then run
-`dotnet .../bin/Release/net8.0/Tracescribe.Mcp.dll` wherever the examples say `tracescribe-mcp`.
+Then ask your agent: *"What failed in claims-api in the last hour, and why?"*
 
-**Claude Code**
+| Tool | What the agent gets |
+|---|---|
+| `find_failures` | Recent failing traces (errors, semantic failures or both), each with its likely root cause |
+| `get_trace_digest` | The span tree with intent, outcomes, failure classes and decisions, then ranked root causes |
+| `find_logs` | Log lines for an intent (such as `claim.fnol.submit`), a trace or a service |
+| `list_services` | Service names |
 
-```bash
-claude mcp add tracescribe -e TRACESCRIBE_BACKEND=jaeger -e TRACESCRIBE_URL=http://localhost:16686 \
-  -- tracescribe-mcp
-```
-
-**Claude Desktop, Cursor, VS Code** (`mcpServers` config)
-
-```json
-{
-  "mcpServers": {
-    "tracescribe": {
-      "command": "tracescribe-mcp",
-      "env": { "TRACESCRIBE_BACKEND": "tempo", "TRACESCRIBE_URL": "http://localhost:3200" }
-    }
-  }
-}
-```
-
-| Setting | Env var | Flag |
-|---|---|---|
-| Backend: `jaeger` (default), `tempo`, `azuremonitor`, `file` | `TRACESCRIBE_BACKEND` | `--backend` |
-| Base URL (defaults: `:16686` Jaeger, `:3200` Tempo, `https://api.loganalytics.azure.com`) | `TRACESCRIBE_URL` | `--url` |
-| File or directory for `file` | `TRACESCRIBE_PATH` | `--path` |
-| Log Analytics workspace id for `azuremonitor` | `TRACESCRIBE_WORKSPACE` | `--workspace` |
-| Extra header, e.g. `Authorization: Basic …` | `TRACESCRIBE_HEADER` | `--header` |
-| Loki base URL, for logs with `jaeger` or `tempo` | `TRACESCRIBE_LOGS_URL` | `--logs-url` |
-| Header for Loki, e.g. `X-Scope-OrgID: tenant1` (defaults to the header above) | `TRACESCRIBE_LOGS_HEADER` | `--logs-header` |
-
-The same binary is a CLI:
-
-```bash
-tracescribe-mcp failures --service claims-api --minutes 30 --kind semantic
-tracescribe-mcp digest 3a9ec5f22067a96ccbf957e467577945
-tracescribe-mcp logs --intent claim.fnol.submit --severity warn --minutes 120
-tracescribe-mcp services --path ./traces
-```
-
-### Azure Monitor / Application Insights
-
-For services exporting with the Azure Monitor OpenTelemetry distro or exporter. Tracescribe attributes land in
-`customDimensions` (`Properties` in the workspace tables) and the backend reads them back with KQL:
-`AppRequests` and `AppDependencies` become spans, `AppExceptions` become exception events, and `AppTraces` hold
-both logs and span events such as `tracescribe.decision`.
-
-```bash
-az login   # or a managed identity / workload identity / service principal in the environment
-claude mcp add tracescribe -e TRACESCRIBE_BACKEND=azuremonitor -e TRACESCRIBE_WORKSPACE=<workspace-guid> \
-  -- tracescribe-mcp
-```
-
-It signs in with `DefaultAzureCredential` and needs **Log Analytics Reader** on the workspace. Searches are KQL
-over the query API (at most two queries per `find_failures` call, to stay inside its rate limits); traces are
-looked up over the last 7 days. For a sovereign cloud, set `TRACESCRIBE_URL` (e.g. `https://api.loganalytics.us`)
-and `TRACESCRIBE_AZURE_SCOPE`.
-
-### Logs by intent
-
-`TracescribeLogProcessor` stamps every log record written inside an operation with its `tracescribe.intent`, so an
-agent can ask for "all warnings from `claim.fnol.submit` in the last two hours" without knowing a trace id:
-
-```
-2 log records for intent=claim.fnol.submit, severity>=WARN over the last 2h (loki, oldest first):
-2026-10-22 09:14:03.212Z WARN claims-api trace=a619766eb96e96ae355d257cbf8fe474 span=1d2c3b4a5e6f7081  VIN decoder timed out, using first vehicle on policy | policy_id=PA-7781203
-2026-10-22 09:41:57.008Z WARN claims-api trace=0c4e1f22b8d94a6b8f0b1a3c5d7e9f10 span=9a8b7c6d5e4f3021  VIN decoder timed out, using first vehicle on policy | policy_id=PA-1002934
-Use get_trace_digest with a trace id to see the operation a log line was written in.
-```
-
-Loki stores OTLP attributes as structured metadata with dots turned into underscores (`tracescribe_intent`), which
-is what the Loki backend queries. To save in-process logs for the file backend, convert them with
-`LogRecord.ToLogEntry()` and write them with `OtlpJsonWriter.WriteLogs`, or use the Collector config below.
+It reads **Jaeger, Grafana Tempo, Grafana Loki, Azure Monitor / Application Insights, or OTLP/JSON files**, and
+works with Claude Code, Claude Desktop, Cursor and VS Code. Setup for each: [docs/backends.md](docs/backends.md).
+The same binary is a CLI (`tracescribe-mcp failures`, `digest`, `logs`, `services`). All tools are read-only.
 
 ### What the agent reads
 
-Output of the [ClaimIntake sample](dotnet/samples/ClaimIntake/Program.cs). An AI agent's VIN-decoding
-tool times out, the code falls back to the wrong vehicle, and the coverage check silently matches it:
+From the [ClaimIntake sample](dotnet/samples/ClaimIntake/Program.cs): an AI agent's VIN-decoding tool times
+out, the code falls back to the wrong vehicle, and the coverage check silently matches it (abridged):
 
 ```
 TRACE a619766eb96e96ae355d257cbf8fe474 | 10 spans | 2 failed, 1 semantic | 148ms | root: claim.fnol.submit
 [FAIL] claim.fnol.submit 148ms svc=claims-api class=validation
 │    expected: claim accepted with a claim number
 │    actual: claim held, no claim number issued
-│    reason: claim held for manual review: vehicle could not be verified
-│    decision: vin.fallback chose=first_vehicle_on_policy alts=[retry_decoder, ask_claimant] why: decoder timed out; avoid blocking claimant
+│    decision: vin.fallback chose=first_vehicle_on_policy alts=[retry_decoder, ask_claimant] why: decoder timed out
 │    context: claim_id=CLM-2026-004211, policy_id=PA-7781203, reporter_email=[REDACTED:email], state=CA
 ├─ [OK] policy.lookup 44ms (+5 healthy spans)
 ├─ [OK] invoke_agent claims-assistant 67ms gen_ai=invoke_agent
 │  └─ [FAIL] execute_tool decode_vin 52ms gen_ai=execute_tool:decode_vin class=dependency.timeout(inferred)
-│          reason: VIN decoder did not respond within 30ms
 │          exception: System.TimeoutException: VIN decoder did not respond within 30ms
 └─ [WRONG] coverage.check 7ms class=semantic
         expected: collision coverage active on the reported vehicle
         actual: collision coverage active on 1HGCM82633A004352; reported vehicle was the second car
-        reason: coverage evaluated against fallback VIN, not the damaged vehicle
-        hint: Mismatch here usually means the VIN fallback picked the wrong vehicle on a multi-vehicle policy
 
 ROOT CAUSE CANDIDATES (most likely first):
 1. execute_tool decode_vin [FAIL] class=dependency.timeout(inferred) retryable=true
-   reason: VIN decoder did not respond within 30ms
-   exception: System.TimeoutException: VIN decoder did not respond within 30ms
-   path: claim.fnol.submit > invoke_agent claims-assistant > execute_tool decode_vin
-   context: claim_id=CLM-2026-004211, policy_id=PA-7781203, reporter_email=[REDACTED:email], state=CA
 2. coverage.check [WRONG] class=semantic
-   reason: coverage evaluated against fallback VIN, not the damaged vehicle
-   path: claim.fnol.submit > coverage.check
-   context: vin=1HGCM82633A004352, claim_id=CLM-2026-004211, policy_id=PA-7781203, reporter_email=[REDACTED:email], state=CA
 ```
 
-Try it locally:
+Try it without a backend:
 
 ```bash
 cd dotnet
 dotnet run --project samples/ClaimIntake -- --export /tmp/claim.json
-dotnet run --project src/Tracescribe.Mcp -f net8.0 -- failures --path /tmp/claim.json
+tracescribe-mcp failures --path /tmp/claim.json
 ```
 
-## Repo layout
+## Packages
 
-```
-spec/        conventions: SPEC.md, attributes.yaml, tools/generate_dotnet.py
-collector/   OTel Collector config: pipeline redaction + OTLP/JSON file export
-dotnet/      Tracescribe.sln: src/, tests/, samples/
-```
-
-## Build and test
-
-```bash
-cd dotnet
-dotnet test
-python3 ../spec/tools/generate_dotnet.py   # after editing spec/attributes.yaml
-```
-
-Requires the .NET 10 SDK (pinned in `global.json`) and the .NET 8 runtime for the net8.0 tests. CI also runs the sample, the CLI and an MCP stdio smoke test, packs all
-packages and installs the MCP tool from its package.
-
-## Releasing
-
-[`release.yml`](.github/workflows/release.yml) publishes every package (with symbols and SourceLink) to nuget.org
-when a `v*` tag is pushed. It uses NuGet [trusted publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing),
-so no API key is stored. One-time setup:
-
-1. On nuget.org, **Trusted Publishing** → add a policy: owner `senthil-sekar`, repository `tracescribe`,
-   workflow file `release.yml`, environment `nuget`.
-2. Add a repository secret `NUGET_USER` with your nuget.org profile name.
-3. Optionally, add required reviewers to the `nuget` environment.
-
-To release, bump `VersionPrefix` in [`dotnet/Directory.Build.props`](dotnet/Directory.Build.props), merge, then tag
-`main` with the same version: `git tag v0.3.1-alpha && git push origin v0.3.1-alpha`, or create a GitHub release with
-that tag. The tag sets the package version; nuget.org versions can be unlisted but never replaced.
+| Package | Use it for |
+|---|---|
+| `Tracescribe.OpenTelemetry` | Most services: the `Scribe` API plus span, log and metric registration |
+| `Tracescribe` | The `Scribe` API without the OpenTelemetry SDK |
+| `Tracescribe.Generators` | `[Scribe]` attributes instead of hand-written operations |
+| `Tracescribe.Extensions.AI` | Intent, outcome and failure tracking for `IChatClient` calls |
+| `Tracescribe.SemanticConventions` | Attribute name constants only |
+| `Tracescribe.Query` | Reading traces and logs from backends in your own tools |
+| `Tracescribe.Mcp` | The MCP server and CLI (`dotnet tool install`) |
 
 ## Roadmap
 
-Done in 1.0.0-rc.1:
-
-- [x] Integration tests against real Jaeger, Tempo and Loki containers in CI (they found and fixed a Jaeger array bug)
-- [x] Benchmarks and published overhead numbers
-- [x] MCP output marked as untrusted data; telemetry text reduced to safe single lines
-- [x] Docs, changelog, security policy, contributing guide
-
-Done in v0.4 (1.0 groundwork):
-
-- [x] Target frameworks: .NET 8, .NET 10 and .NET Standard 2.0 for the libraries services reference
-- [x] Dependencies upgraded (OpenTelemetry 1.20, MCP SDK 2.x) and pinned centrally in `Directory.Packages.props`
-- [x] API trimmed for 1.0 (backend HTTP plumbing and query builders made internal); package validation fails the build on unreviewed breaking changes
-- [x] Spec: stability per attribute, intent naming rules, `failure.class` extension rules, versioning policy
-
-Done in v0.3:
-
-- [x] `find_logs` MCP tool and `logs` CLI command keyed by `tracescribe.intent`, over Loki, Azure Monitor and OTLP/JSON log files
-- [x] Azure Monitor / Application Insights backend (KQL over a Log Analytics workspace, Entra ID sign-in)
-- [x] NuGet packaging: package READMEs, symbols, SourceLink, tag-driven release with trusted publishing; `Tracescribe.Mcp` as a .NET tool
-- [x] First nuget.org release, `0.3.0-alpha`: `dotnet tool install -g Tracescribe.Mcp --prerelease`
-
-Done in v0.2:
-
-- [x] `Tracescribe.Mcp`: MCP server and CLI over Jaeger, Tempo and OTLP/JSON files
-- [x] OTLP/JSON and Jaeger JSON readers; OTLP/JSON writer
-- [x] `IChatClient` middleware (Microsoft.Extensions.AI)
-- [x] Redaction for exception messages, log bodies and digests; Collector config for pipeline redaction
-- [x] Logs and metrics conventions
-- [x] Source generator for `[Scribe]` methods
-- [x] Constants generated from `spec/attributes.yaml`
-
-Next:
-
-- [ ] 1.0.0, after the release candidate runs in a real service for a few weeks
+- [ ] 1.0.0, after the release candidate runs in a real service
 - [ ] Azure Monitor checked against a live workspace
-- [ ] Java SDK sharing `spec/`
+- [ ] Java SDK sharing [`spec/`](spec/SPEC.md)
+
+Past releases: [CHANGELOG.md](CHANGELOG.md).
 
 ## Prior art
 
-- [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/): Tracescribe builds on these.
-- *AgentTrace: A Structured Logging Framework for Agent System Observability* (AlSayyad, Huang, Pal; arXiv:2602.10133): operational, cognitive and contextual surfaces for agent logs.
-- OpenInference, OpenLLMetry and OpenLIT: LLM tracing instrumentation, mostly Python and TypeScript.
-- Grafana, Honeycomb, Datadog and Sentry MCP servers: these let agents query raw telemetry. Tracescribe adds the semantics and a digest built for triage.
+Tracescribe builds on the [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
+Related work: *AgentTrace* (AlSayyad, Huang, Pal; arXiv:2602.10133) on structured agent logs; OpenInference,
+OpenLLMetry and OpenLIT for LLM tracing; the Grafana, Honeycomb, Datadog and Sentry MCP servers, which give agents
+raw telemetry. Tracescribe adds the semantics and a digest built for triage.
 
 ## License
 
